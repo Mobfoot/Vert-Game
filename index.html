@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Half Pipe">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#120d2e">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
+<title>Sunset Half Pipe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+/* Layout: arcade screen with a header and key legend on desktop.
+   With the controller on, the screen sits between a D-pad half and an A/B half (landscape) or above one pad (portrait).
+   Palette: night indigo page, sunset pink and yellow accents, light grey frame with black plate like an NES pad. Single dark look by choice. */
+:root {
+  --bg: #120d2e;
+  --panel: #1d1544;
+  --edge: #3a2c7a;
+  --ink: #ffe9b8;
+  --dim: #a99edb;
+  --hot: #ff2f8e;
+  --sun: #ffd34d;
+  --teal: #2ee6c8;
+  --frame: #bdb9b2;
+  --frame-dark: #8e8a84;
+  --plate: #2b2b31;
+  --plate-ink: #cfcfd6;
+  --cross: #0e0e11;
+  --btn: #d5232b;
+  --u: clamp(32px, 10vh, 58px);
+  --u: clamp(32px, 10dvh, 58px);
+  --display: "Press Start 2P", ui-monospace, Menlo, Consolas, monospace;
+  --body: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 32px;
+}
+.wrap { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(11px, 2.8vw, 16px);
+  letter-spacing: 0.04em;
+  color: var(--sun);
+  text-shadow: 2px 2px 0 var(--hot);
+  text-wrap: balance;
+}
+.meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-family: var(--display); font-size: 9px; color: var(--dim); }
+.mini {
+  font-family: var(--display);
+  font-size: 9px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.mini:hover { border-color: var(--hot); }
+.mini:focus-visible, .deck button:focus-visible, canvas:focus-visible, .dpad:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+
+.rotate {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--display);
+  font-size: 9px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--bg);
+  background: var(--sun);
+  border: 2px solid var(--hot);
+}
+
+.screen { border: 3px solid var(--edge); background: #000; box-shadow: 0 0 0 3px #000, 7px 7px 0 var(--hot); }
+canvas { display: block; width: 100%; height: auto; aspect-ratio: 320 / 200; image-rendering: pixelated; image-rendering: crisp-edges; touch-action: none; outline: none; }
+
+/* controller parts: hidden until the pad is switched on */
+.side, .sysbtns { display: none; }
+body.padon .deck { display: grid; grid-template-columns: 1fr 1fr; grid-template-areas: "screen screen" "left right" "sys sys"; gap: 12px; }
+body.padon .center { display: contents; }
+body.padon .screen { grid-area: screen; }
+body.padon .side { display: flex; }
+body.padon .side.left { grid-area: left; border-radius: 30px 6px 6px 30px; }
+body.padon .side.right { grid-area: right; border-radius: 6px 30px 30px 6px; }
+body.padon .sysbtns { display: flex; grid-area: sys; }
+body.padon .legend, body.padon .note { display: none; }
+
+.side {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 10px;
+  background: var(--plate);
+  border: 4px solid var(--frame);
+  box-shadow: inset 0 0 0 2px #000, 0 4px 0 var(--frame-dark);
+  min-width: 0;
+}
+
+.dpad { position: relative; width: calc(var(--u) * 3); height: calc(var(--u) * 3); touch-action: none; user-select: none; -webkit-user-select: none; }
+.dpad i {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cross);
+  box-shadow: 0 0 0 1px #5c5c66;
+  color: #8a8a96;
+  font-style: normal;
+  font-size: calc(var(--u) * 0.3);
+  pointer-events: none;
+}
+.dpad .u { left: var(--u); top: 0; width: var(--u); height: calc(var(--u) * 1.15); border-radius: 5px 5px 0 0; }
+.dpad .d { left: var(--u); bottom: 0; width: var(--u); height: calc(var(--u) * 1.15); border-radius: 0 0 5px 5px; }
+.dpad .l { left: 0; top: var(--u); width: calc(var(--u) * 1.15); height: var(--u); border-radius: 5px 0 0 5px; }
+.dpad .r { right: 0; top: var(--u); width: calc(var(--u) * 1.15); height: var(--u); border-radius: 0 5px 5px 0; }
+.dpad .c { left: var(--u); top: var(--u); width: var(--u); height: var(--u); box-shadow: none; }
+.dpad i.on { background: var(--hot); color: #fff; }
+
+.ab { display: flex; gap: calc(var(--u) * 0.45); align-items: flex-start; }
+.abcol { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.nes {
+  width: calc(var(--u) * 1.5);
+  height: calc(var(--u) * 1.5);
+  border-radius: 50%;
+  background: var(--btn);
+  border: 3px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.5), inset 0 3px 0 rgba(255, 255, 255, 0.22);
+  font-family: var(--display);
+  font-size: calc(var(--u) * 0.4);
+  color: #fff;
+  padding: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.nes.on { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5), inset 0 3px 0 rgba(255, 255, 255, 0.22); filter: brightness(1.25); }
+.fn { font-family: var(--display); font-size: 8px; color: var(--plate-ink); }
+.caption { margin: 0; font-size: 11px; line-height: 1.4; color: var(--plate-ink); text-align: center; font-weight: 500; }
+
+.sysbtns { justify-content: center; align-items: center; gap: 28px; padding-block: 4px; }
+.sys { display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: var(--display); font-size: 7px; color: var(--dim); }
+.sys button {
+  width: 46px;
+  height: 14px;
+  background: var(--btn);
+  border: 2px solid rgba(0, 0, 0, 0.45);
+  border-radius: 8px;
+  transform: rotate(-24deg);
+  padding: 0;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.sys button.on { filter: brightness(1.4); }
+
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px 24px; margin: 0; padding: 0; list-style: none; color: var(--dim); }
+.legend li { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+kbd {
+  font-family: var(--display);
+  font-size: 9px;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-bottom-width: 3px;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+.note { margin: 0; color: var(--dim); max-width: 65ch; }
+
+/* landscape on a touch device: the game fills the viewport and the pad floats over the bottom corners */
+body.immersive { --u: clamp(30px, 9vh, 50px); --u: clamp(30px, 9dvh, 50px); padding: 0; overflow: hidden; background: #000; }
+body.immersive .wrap { position: fixed; inset: 0; height: auto; max-width: none; margin: 0; gap: 0; }
+body.immersive header, body.immersive .legend, body.immersive .note, body.immersive .rotate, body.immersive .caption { display: none; }
+body.immersive .deck { position: absolute; inset: 0; display: block; }
+body.immersive .center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+body.immersive .screen { flex: none; border: 0; box-shadow: none; }
+body.immersive .side {
+  position: absolute;
+  z-index: 2;
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  width: auto;
+  padding: 8px;
+  gap: 0;
+  background: rgba(43, 43, 49, 0.5);
+  border: 2px solid rgba(189, 185, 178, 0.55);
+  box-shadow: none;
+}
+body.immersive .side.left { left: max(12px, env(safe-area-inset-left, 0px)); border-radius: 30px 8px 8px 30px; }
+body.immersive .side.right { right: max(12px, env(safe-area-inset-right, 0px)); border-radius: 8px 30px 30px 8px; }
+body.immersive .sysbtns {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: max(4px, env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  gap: 22px;
+  padding: 0;
+  opacity: 0.8;
+}
+body.immersive .sys { flex-direction: row; gap: 6px; }
+body.immersive .sys button { width: 36px; height: 11px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <h1>SUNSET HALF PIPE</h1>
+    <div class="meta">
+      <span id="best">BEST 000000</span>
+      <button id="padtoggle" class="mini" type="button" aria-pressed="false">PAD OFF</button>
+      <button id="mute" class="mini" type="button" aria-pressed="false">SOUND ON</button>
+    </div>
+  </header>
+
+  <p class="rotate" id="rotate" hidden>TURN YOUR PHONE SIDEWAYS TO PLAY IN LANDSCAPE</p>
+
+  <div class="deck">
+    <aside class="side left" aria-label="Left side of the controller">
+      <div class="dpad" id="dpad" role="group" aria-label="Directional pad: up and down pump the ramp, left and right turn">
+        <i class="u">&#9650;</i><i class="d">&#9660;</i><i class="l">&#9664;</i><i class="r">&#9654;</i><i class="c"></i>
+      </div>
+      <p class="caption">UP/DOWN: PUMP<br>LEFT/RIGHT: TURN</p>
+    </aside>
+
+    <div class="center">
+      <div class="screen">
+        <canvas id="game" width="320" height="200" tabindex="0" aria-label="Half pipe skateboarding game. Press space or Start to begin."></canvas>
+      </div>
+      <div class="sysbtns">
+        <div class="sys"><button type="button" data-tap="select" aria-label="Select, toggles sound"></button>SELECT</div>
+        <div class="sys"><button type="button" data-tap="start" aria-label="Start, begins or pauses the game"></button>START</div>
+      </div>
+    </div>
+
+    <aside class="side right" aria-label="Right side of the controller">
+      <div class="ab" role="group" aria-label="A and B buttons">
+        <div class="abcol"><button type="button" class="nes" data-tap="b" aria-label="B button, kickflip in the air">B</button><span class="fn">KICK</span></div>
+        <div class="abcol"><button type="button" class="nes" data-hold="a" aria-label="A button, hold at the lip for a handplant">A</button><span class="fn">PLANT</span></div>
+      </div>
+      <p class="caption">HOLD A AT THE LIP<br>B IN THE AIR</p>
+    </aside>
+  </div>
+
+  <ul class="legend">
+    <li><kbd>UP DOWN</kbd><span>Up while rising, down while dropping, to pump speed.</span></li>
+    <li><kbd>Z</kbd><span>Hold as you reach the lip for a handplant.</span></li>
+    <li><kbd>LEFT RIGHT</kbd><span>Hold at the lip for a kick turn. Hold in the air for an aerial turn.</span></li>
+    <li><kbd>X</kbd><span>Kickflip in the air. Space works too.</span></li>
+    <li><kbd>ENTER</kbd><span>Start or pause. P also pauses.</span></li>
+    <li><kbd>M</kbd><span>Sound on or off.</span></li>
+  </ul>
+  <p class="note">Rock the pad up and down with the skater to build speed. Once the speed bar passes the white air line you leave the lip. What you hold when you reach the lip decides the move: A for a handplant, left or right for a kick turn, nothing for a launch. Stopped on the flat? Hold left or right to push off.</p>
+</main>
+
+<script>
+/* ===== Engine: pure simulation, no DOM ===== */
+const Game = (function () {
+  const TAU = Math.PI * 2;
+  const C = { W: 320, H: 200, CX: 160, FLOOR: 182, F: 22, R: 58, EXT: 14, GRAV: 260, VMAX: 262, FRIC: 0.09, ROUND: 60, PUMP: 38 };
+  C.ARC = Math.PI * C.R / 2;
+  C.S_TOP = C.F + C.ARC + C.EXT;
+  C.LIP_H = C.R + C.EXT;
+  C.AIR_LINE = Math.sqrt(2 * C.GRAV * C.LIP_H);
+
+  const S = {};
+  let events = [];
+
+  // Position on the pipe profile for signed arc length s from the centre of the flat bottom.
+  function surf(s) {
+    const a = Math.abs(s), sg = s < 0 ? -1 : 1;
+    if (a <= C.F) return { x: s, h: 0, slope: 0, alpha: 0, sg: sg };
+    if (a <= C.F + C.ARC) {
+      const p = (a - C.F) / C.R;
+      return { x: sg * (C.F + C.R * Math.sin(p)), h: C.R * (1 - Math.cos(p)), slope: sg * Math.sin(p), alpha: p, sg: sg };
+    }
+    return { x: sg * (C.F + C.R), h: C.R + (a - C.F - C.ARC), slope: sg, alpha: Math.PI / 2, sg: sg };
+  }
+
+  function fresh(state) {
+    Object.assign(S, {
+      state: state, mode: 'ride',
+      s: -(C.F + C.ARC), v: 0, face: 1, rFace: 1, fakie: false,
+      time: C.ROUND, timeUp: false, score: 0, combo: 0,
+      bestAir: 0, bestTrick: '', bestTrickPts: 0,
+      airs: 0, cleanAirs: 0, bails: 0, plants: 0, kickTurns: 0,
+      pumping: 0, pumpTick: 0, bailT: 0,
+      air: null, plant: null, kick: null,
+      last: null, lastAt: -99, t: 0, sinceAir: 0, overAt: -99
+    });
+    events = [];
+  }
+  fresh('title');
+
+  /* ---------- kickflip (B in the air) ---------- */
+  // One flip at a time, with one press buffered, and three at most per air.
+  function startKickflip() {
+    const a = S.air;
+    if (a.kicks + (a.kicking ? 1 : 0) + a.queued >= 3) return;
+    if (a.kicking) { if (a.queued < 1) a.queued++; return; }
+    a.kicking = true; a.kick = 0;
+    events.push({ type: 'flip' });
+  }
+
+  function press(name) {
+    if (S.state !== 'play') return;
+    if (name === 'b' && S.mode === 'air') startKickflip();
+  }
+
+  /* ---------- scoring helpers ---------- */
+  function judge(total, bail, sloppy) {
+    const base = bail ? 1.2 : Math.min(9.7, 3.4 + total / 420) * (sloppy ? 0.7 : 1);
+    return [0, 1, 2].map(function () {
+      const v = base + (Math.random() - 0.5) * 0.8;
+      return Math.max(0, Math.min(10, Math.round(v * 10) / 10));
+    });
+  }
+
+  // handplants and kick turns score as a clean trick with the current combo
+  function finishLipTrick(label, pts, x, y) {
+    const comboMult = 1 + 0.25 * Math.min(S.combo, 8);
+    const total = Math.round(pts * comboMult);
+    S.score += total; S.combo++; S.sinceAir = 0;
+    if (total > S.bestTrickPts) { S.bestTrickPts = total; S.bestTrick = label; }
+    const ev = {
+      type: 'land', scored: true, bail: false, sloppy: false, clean: true,
+      label: label, total: total, judges: judge(total, false, false), apex: 0, mult: comboMult, x: x, y: y
+    };
+    S.last = ev; S.lastAt = S.t;
+    events.push(ev);
+  }
+
+  /* ---------- hand plant (hold A when you reach the lip) ---------- */
+  function startPlant(sg) {
+    const vLip = Math.abs(S.v);
+    S.mode = 'plant'; S.s = sg * C.S_TOP; S.v = 0;
+    S.plant = { side: sg, t: 0, phase: 'in', hold: 0, max: Math.min(1.3, 0.3 + vLip * 0.0055), e: 0, outT: 0, face0: S.face };
+    events.push({ type: 'plantStart', x: C.CX + sg * (C.F + C.R), y: C.FLOOR - C.LIP_H });
+  }
+  function stepPlant(dt, inp) {
+    const P = S.plant;
+    if (P.phase === 'in') {
+      P.t += dt; P.e = Math.min(1, P.t / 0.2);
+      if (P.t >= 0.2) { P.phase = 'hold'; P.e = 1; }
+    } else if (P.phase === 'hold') {
+      P.hold += dt;
+      if (!inp.a || P.hold >= P.max) { P.phase = 'out'; P.outT = 0; }
+    } else {
+      P.outT += dt; P.e = Math.max(0, 1 - P.outT / 0.2);
+      if (P.outT >= 0.2) finishPlant();
+    }
+  }
+  function finishPlant() {
+    const P = S.plant, side = P.side;
+    S.plants++;
+    const pts = 300 + Math.round(450 * P.hold);
+    S.mode = 'ride'; S.s = side * (C.S_TOP - 0.01); S.v = -side * 45;
+    S.face = P.face0; S.rFace = P.face0; S.fakie = (P.face0 !== -side);
+    S.plant = null;
+    finishLipTrick('HANDPLANT', pts, C.CX + side * (C.F + C.R), C.FLOOR - C.LIP_H);
+  }
+
+  /* ---------- kick turn (hold left or right when you reach the lip) ---------- */
+  function startKick(sg) {
+    S.mode = 'kick'; S.s = sg * C.S_TOP;
+    S.kick = { side: sg, t: 0, dur: 0.42, face0: S.face, vLip: Math.abs(S.v) };
+    S.v = 0;
+    events.push({ type: 'kickStart', x: C.CX + sg * (C.F + C.R), y: C.FLOOR - C.LIP_H });
+  }
+  function stepKick(dt) {
+    const K = S.kick;
+    K.t += dt;
+    if (K.t >= K.dur) finishKick();
+  }
+  function finishKick() {
+    const K = S.kick, side = K.side;
+    S.kickTurns++;
+    const faceNew = -K.face0;
+    S.mode = 'ride'; S.s = side * (C.S_TOP - 0.01); S.v = -side * 55;
+    S.face = faceNew; S.rFace = faceNew; S.fakie = (faceNew !== -side);
+    S.kick = null;
+    finishLipTrick('KICK TURN', 160 + Math.round(K.vLip * 0.8),C.CX + side * (C.F + C.R), C.FLOOR - C.LIP_H);
+  }
+
+  /* ---------- launch and landing ---------- */
+  function launch() {
+    const side = S.s < 0 ? -1 : 1;
+    const vh = side * S.v;
+    S.mode = 'air';
+    S.air = {
+      side: side, h: C.LIP_H, vh: vh, t: 0, apex: 0, face0: S.face,
+      kick: 0, kicking: false, kicks: 0, queued: 0, spin: 0
+    };
+    events.push({ type: 'launch', x: C.CX + side * (C.F + C.R), y: C.FLOOR - C.LIP_H, vh: vh });
+  }
+
+  function land() {
+    const a = S.air, side = a.side;
+    const turns = Math.round(a.spin / Math.PI), sErr = Math.abs(a.spin - turns * Math.PI), n = Math.abs(turns);
+    const scored = a.apex > 4;
+    // landing with the board mid-flip: bail if it is well off your feet, sloppy if it is nearly round
+    const bail = scored && a.kicking && a.kick > 0.25 && a.kick < 0.75;
+    const sloppy = scored && !bail && (sErr > 0.62 || a.kicking);
+
+    S.mode = 'ride';
+    S.s = side * (C.S_TOP - 0.01);
+    S.v = side * a.vh;
+    const faceNew = a.face0 * (n % 2 ? -1 : 1);
+    S.face = faceNew; S.rFace = faceNew;
+    S.fakie = (faceNew !== -side);
+    S.air = null;
+
+    let total = 0, label = '', judges = null, mult = 1;
+    if (scored) {
+      S.airs++; S.sinceAir = 0;
+      S.bestAir = Math.max(S.bestAir, Math.round(a.apex));
+      const names = [];
+      let pts = Math.round(a.apex * 6), types = 0;
+      if (!bail) {
+        if (n > 0) { pts += Math.round(120 * n * (1 + 0.35 * (n - 1))); names.push(n === 1 ? 'AERIAL 180' : 'AERIAL ' + (n * 180)); types++; }
+        const nk = a.kicks;
+        if (nk > 0) { pts += 260 * nk; names.push(nk === 1 ? 'KICKFLIP' : nk === 2 ? 'DOUBLE KICKFLIP' : 'TRIPLE KICKFLIP'); types++; }
+      }
+      const variety = 1 + 0.3 * Math.max(0, types - 1);
+      const comboMult = 1 + 0.25 * Math.min(S.combo, 8);
+      mult = variety * comboMult;
+      total = bail ? 0 : Math.round(pts * mult * (sloppy ? 0.4 : 1));
+      label = names.join(' + ') || 'AIR';
+      judges = judge(total, bail, sloppy);
+
+      if (bail) {
+        S.mode = 'bail'; S.bailT = 0; S.v *= 0.5; S.combo = 0; S.bails++;
+      } else if (sloppy) {
+        S.v *= 0.75; S.combo = 0;
+      } else {
+        S.v = Math.sign(S.v) * Math.min(C.VMAX, Math.abs(S.v) * 1.04);
+        S.combo++; S.cleanAirs++;
+      }
+      S.score += total;
+      if (total > S.bestTrickPts) { S.bestTrickPts = total; S.bestTrick = label; }
+    }
+    const ev = {
+      type: 'land', scored: scored, bail: bail, sloppy: sloppy, clean: scored && !bail && !sloppy,
+      label: label, total: total, judges: judges, apex: a.apex, mult: mult,
+      x: C.CX + side * (C.F + C.R), y: C.FLOOR - C.LIP_H
+    };
+    if (scored) { S.last = ev; S.lastAt = S.t; }
+    events.push(ev);
+  }
+
+  /* ---------- stepping ---------- */
+  // Pad up while rising and pad down while dropping adds speed. The wrong way costs speed.
+  function applyPump(dt, inp, sf) {
+    S.pumping = 0;
+    if (S.state !== 'play') return;
+    if (Math.abs(sf.slope) < 0.06) {
+      // push off from a standstill on the flat with left or right
+      const push = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
+      if (push !== 0 && Math.abs(S.v) < 60) S.v += push * 110 * dt;
+      return;
+    }
+    const rate = sf.slope * S.v;
+    const good = (inp.up && rate > 2) || (inp.down && rate < -2);
+    const bad = (inp.up && rate < -2) || (inp.down && rate > 2);
+    if (good) {
+      const eq = Math.sqrt(S.v * S.v + 2 * C.GRAV * sf.h);
+      if (eq < C.VMAX) S.v += Math.sign(S.v) * C.PUMP * dt;
+      S.pumping = 1;
+      S.pumpTick -= dt;
+      if (S.pumpTick <= 0) { S.pumpTick = 0.16; events.push({ type: 'pumpTick' }); }
+    } else if (bad) {
+      S.v *= (1 - 0.9 * dt);
+      S.pumping = -1;
+    }
+  }
+
+  function stepSurface(dt, inp) {
+    const sf = surf(S.s);
+    const fr = S.mode === 'bail' ? 1.6 : C.FRIC;
+    S.v += (-C.GRAV * sf.slope - fr * S.v) * dt;
+    if (S.mode === 'ride') applyPump(dt, inp, sf);
+    S.s += S.v * dt;
+    if (Math.abs(S.s) >= C.S_TOP) {
+      const sg = Math.sign(S.s);
+      if (S.mode === 'ride' && S.state === 'play' && S.v * sg > 0) {
+        if (inp.a) startPlant(sg);
+        else if (inp.left || inp.right) startKick(sg);
+        else launch();
+        return;
+      }
+      S.s = sg * (C.S_TOP - 0.01);
+      S.v = -Math.abs(S.v) * sg * 0.3;
+    }
+    if (S.mode === 'ride' && Math.abs(S.v) > 12) {
+      S.face = (S.v > 0 ? 1 : -1) * (S.fakie ? -1 : 1);
+    }
+    S.rFace += (S.face - S.rFace) * Math.min(1, dt * 14);
+    if (S.mode === 'bail') {
+      S.bailT += dt;
+      if (S.bailT > 0.9 && Math.abs(S.v) < 14 && Math.abs(S.s) < C.F + 6) { S.mode = 'ride'; S.v = 0; }
+      else if (S.bailT > 2.4) { S.mode = 'ride'; S.s = 0; S.v = 0; }
+    }
+  }
+
+  function stepAir(dt, inp) {
+    const a = S.air;
+    a.t += dt;
+    const dirIn = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
+
+    // aerial turn: hold left or right once you are off the lip
+    if (dirIn !== 0) {
+      a.spin += dirIn * (TAU / 0.6) * dt;
+    } else {
+      const tgt = Math.round(a.spin / Math.PI) * Math.PI;
+      const d = tgt - a.spin, step = 2.5 * dt;
+      a.spin += Math.abs(d) < step ? d : Math.sign(d) * step;
+    }
+    if (a.kicking) {
+      a.kick += dt / 0.42;
+      if (a.kick >= 1) {
+        a.kicks++; a.kick = 0;
+        if (a.queued > 0) { a.queued--; events.push({ type: 'flip' }); } else a.kicking = false;
+      }
+    }
+
+    a.vh -= C.GRAV * dt;
+    a.h += a.vh * dt;
+    if (a.h - C.LIP_H > a.apex) a.apex = a.h - C.LIP_H;
+    if (a.vh < 0 && a.h <= C.LIP_H) land();
+  }
+
+  function sub(dt, inp) {
+    S.t += dt;
+    S.sinceAir += dt;
+    if (S.state === 'play' && !S.timeUp) {
+      S.time -= dt;
+      if (S.time <= 0) { S.time = 0; S.timeUp = true; events.push({ type: 'timeup' }); }
+    }
+    if (S.mode === 'air') stepAir(dt, inp);
+    else if (S.mode === 'plant') stepPlant(dt, inp);
+    else if (S.mode === 'kick') stepKick(dt);
+    else stepSurface(dt, inp);
+    if (S.state === 'play' && S.timeUp && S.mode === 'ride') {
+      S.state = 'over'; S.overAt = S.t;
+      events.push({ type: 'over' });
+    }
+  }
+
+  function update(dtRaw, inp) {
+    const dt = Math.min(dtRaw, 0.05);
+    const n = Math.max(1, Math.ceil(dt / (1 / 240)));
+    const h = dt / n;
+    for (let i = 0; i < n; i++) sub(h, inp);
+  }
+
+  function energySpeed() {
+    if (S.mode === 'air' && S.air) return Math.sqrt(S.air.vh * S.air.vh + 2 * C.GRAV * S.air.h);
+    if (S.mode === 'plant' || S.mode === 'kick') return C.AIR_LINE;
+    const sf = surf(S.s);
+    return Math.sqrt(S.v * S.v + 2 * C.GRAV * sf.h);
+  }
+
+  return {
+    C: C, S: S, surf: surf, update: update, press: press, energySpeed: energySpeed,
+    start: function () { fresh('play'); },
+    toTitle: function () { fresh('title'); },
+    drain: function () { const e = events; events = []; return e; }
+  };
+})();
+/* ===== Renderer: 320x200 pixel canvas ===== */
+const Render = (function () {
+  const C = Game.C, W = C.W, H = C.H, DECK = C.FLOOR - C.LIP_H;
+  const FONT = '"Press Start 2P", ui-monospace, Menlo, Consolas, monospace';
+  const COL = {
+    ink: '#ffe9b8', dim: '#a99edb', night: '#120d2e', shirt: '#2ee6c8', pants: '#3b3bff', skin: '#ffbf8a', hair: '#3a1d0c',
+    band: '#ff2f8e', shoe: '#ffffff', deck: '#ff2f8e', wheel: '#241a4a',
+    wood: '#b8742c', hot: '#ff2f8e', sun: '#ffd34d', teal: '#2ee6c8', red: '#ff4b4b', orange: '#ff9f43'
+  };
+  const spr = { body: {}, board: [] };
+  let bg = null;
+  let parts = [];
+  let floats = [];
+  let shake = 0;
+  let padMode = false;
+  let sparkT = 0;
+
+  function mk(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+
+  /* ---------- sprites ---------- */
+  function bodySprite(pose) {
+    const c = mk(24, 32), x = c.getContext('2d'), ox = 12, oy = 28;
+    const R = function (a, b, w, h, col) { x.fillStyle = col; x.fillRect(ox + a, oy + b, w, h); };
+    const crouch = pose === 'crouch';
+    const lg = crouch ? 3 : 5, top = -6 - lg;
+    R(-5, -6, 4, 2, COL.shoe); R(2, -6, 4, 2, COL.shoe);
+    R(-4, -6 - lg, 3, lg, COL.pants); R(3, -6 - lg, 3, lg, COL.pants);
+    R(-4, top - 6, 9, 6, COL.shirt);
+    R(-3, top - 11, 6, 5, COL.skin);
+    R(-3, top - 12, 6, 2, COL.hair);
+    R(-3, top - 9, 6, 1, COL.band);
+    R(2, top - 8, 1, 1, '#000');
+    if (pose === 'plant') {
+      // arms straight past the head: in the handstand these are the ones on the coping
+      R(-6, -27, 2, 11, COL.skin);
+      R(5, -27, 2, 11, COL.skin);
+    } else if (crouch) {
+      R(-6, top - 4, 2, 3, COL.skin);
+      R(5, top - 4, 3, 2, COL.skin);
+    } else {
+      R(-8, top - 5, 4, 2, COL.skin);
+      R(5, top - 6, 4, 2, COL.skin);
+    }
+    return c;
+  }
+  // frame 0 deck up, 1 edge, 2 underside (wheels up), 3 edge: cycling them is a kickflip
+  function boardSprite(i) {
+    const c = mk(20, 8), x = c.getContext('2d');
+    if (i === 0) {
+      x.fillStyle = COL.deck; x.fillRect(1, 4, 18, 2); x.fillRect(0, 3, 1, 1); x.fillRect(19, 3, 1, 1);
+      x.fillStyle = COL.wheel; x.fillRect(3, 6, 2, 2); x.fillRect(15, 6, 2, 2);
+    } else if (i === 2) {
+      x.fillStyle = '#a8165f'; x.fillRect(1, 4, 18, 2); x.fillRect(0, 3, 1, 1); x.fillRect(19, 3, 1, 1);
+      x.fillStyle = COL.wheel; x.fillRect(3, 2, 2, 2); x.fillRect(15, 2, 2, 2);
+    } else {
+      x.fillStyle = i === 1 ? COL.ink : '#a8165f'; x.fillRect(1, 5, 18, 1);
+    }
+    return c;
+  }
+  function buildSprites() {
+    ['ride', 'crouch', 'plant'].forEach(function (p) { spr.body[p] = bodySprite(p); });
+    for (let i = 0; i < 4; i++) spr.board[i] = boardSprite(i);
+  }
+
+  /* ---------- background (drawn once, redrawn when the pixel font arrives) ---------- */
+  function palm(g, bx, by) {
+    const ty = by - 50;
+    for (let i = 0; i < 13; i++) {
+      const px = bx + Math.round(Math.sin(i / 4) * 3);
+      g.fillStyle = i % 2 ? '#4a2a12' : '#5e3818';
+      g.fillRect(px, by - i * 4, 4, 4);
+    }
+    const tipX = bx + Math.round(Math.sin(12 / 4) * 3) + 2;
+    [-170, -140, -105, -75, -40, -10].forEach(function (deg) {
+      const a = deg * Math.PI / 180;
+      for (let t = 0; t < 16; t++) {
+        const px = tipX + Math.cos(a) * t * 1.7;
+        const py = ty + Math.sin(a) * t * 0.9 + t * t * 0.05;
+        g.fillStyle = (t % 4 < 2) ? '#1f9a4a' : '#136b34';
+        g.fillRect(Math.round(px), Math.round(py), 2, 2);
+      }
+    });
+    g.fillStyle = '#7a4a1a'; g.fillRect(tipX - 2, ty + 1, 3, 3); g.fillRect(tipX + 1, ty + 3, 3, 3);
+  }
+  function buildBg() {
+    bg = bg || mk(W, H);
+    const x = bg.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    const sky = ['#1d1b6e', '#2a2288', '#3a2a9e', '#5330a8', '#7a35a8', '#a63aa0', '#d14a98', '#f2607f', '#ff8264', '#ffa75a', '#ffc860', '#ffe58a'];
+    sky.forEach(function (c, i) { x.fillStyle = c; x.fillRect(0, i * 7, W, 7); });
+    for (let i = 0; i < 26; i++) {
+      const sx = (i * 97 + 31) % W, sy = (i * 53 + 7) % 34;
+      x.fillStyle = i % 3 ? '#c9b8ff' : '#ffffff'; x.fillRect(sx, sy, 1, 1);
+    }
+    const HZ = 84, cx = 160;
+    for (let y = 46; y < HZ; y++) {
+      const dy = HZ - y, half = Math.floor(Math.sqrt(36 * 36 - dy * dy));
+      const gapRows = Math.floor((y - 56) / 9);
+      if (y > 56 && ((y - 56) % 7) < gapRows) continue;
+      const k = (y - 46) / (HZ - 46);
+      x.fillStyle = 'rgb(255,' + Math.round(246 - k * 108) + ',' + Math.round(176 - k * 100) + ')';
+      x.fillRect(cx - half, y, half * 2, 1);
+    }
+    x.fillStyle = '#ff9ab8'; x.fillRect(34, 40, 30, 3); x.fillRect(42, 37, 18, 3);
+    x.fillRect(246, 28, 34, 3); x.fillRect(254, 25, 20, 3);
+    x.fillStyle = '#ffc3cf'; x.fillRect(38, 41, 18, 1); x.fillRect(252, 29, 22, 1);
+    x.fillStyle = '#1b5fa8'; x.fillRect(0, HZ, W, 28);
+    for (let y = HZ + 2; y < HZ + 28; y += 4) {
+      for (let px = ((y * 7) % 23); px < W; px += 23) {
+        x.fillStyle = '#3fa3e0'; x.fillRect(px, y, 9 + (y % 3) * 3, 1);
+      }
+    }
+    for (let y = HZ + 1, i = 0; y < HZ + 26; y += 3, i++) {
+      const w = Math.max(6, 46 - i * 4), off = (i % 2) * 5;
+      x.fillStyle = i % 2 ? '#ffc860' : '#fff0a8';
+      x.fillRect(cx - (w >> 1) + off, y, w, 1);
+    }
+    x.fillStyle = '#f0c978'; x.fillRect(0, HZ + 28, W, H - HZ - 28);
+    for (let py = HZ + 28; py < H; py += 2) {
+      for (let px = 0; px < W; px += 2) {
+        if (((px * 3 + py * 5) % 11) === 0) { x.fillStyle = '#dcae5a'; x.fillRect(px, py, 2, 1); }
+      }
+    }
+    x.fillStyle = '#c99a4e'; x.fillRect(0, HZ + 28, W, 1);
+    palm(x, 22, DECK + 6);
+    palm(x, 298, DECK + 6);
+
+    const pts = [];
+    for (let s = -C.S_TOP; s <= C.S_TOP + 0.01; s += 1.5) {
+      const f = Game.surf(s);
+      pts.push([C.CX + f.x, C.FLOOR - f.h]);
+    }
+    function trace() {
+      x.beginPath(); x.moveTo(0, DECK);
+      pts.forEach(function (p) { x.lineTo(p[0], p[1]); });
+      x.lineTo(W, DECK); x.lineTo(W, H); x.lineTo(0, H); x.closePath();
+    }
+    trace(); x.fillStyle = COL.wood; x.fill();
+    x.save(); trace(); x.clip();
+    ['#a86526', '#945620', '#80481a', '#6a3a15'].forEach(function (c, i) {
+      x.save(); x.translate(0, 7 * (i + 1));
+      x.beginPath(); x.moveTo(0, DECK);
+      pts.forEach(function (p) { x.lineTo(p[0], p[1]); });
+      x.lineTo(W, DECK);
+      x.strokeStyle = c; x.lineWidth = 2; x.stroke(); x.restore();
+    });
+    x.fillStyle = '#945620';
+    for (let px = 4; px < W; px += 16) {
+      if (px < C.CX - 80 || px > C.CX + 80) x.fillRect(px, DECK + 4, 1, H);
+    }
+    x.fillStyle = '#4a2a10'; x.fillRect(0, C.FLOOR + 6, W, H);
+    x.restore();
+    x.beginPath();
+    pts.forEach(function (p, i) { if (i) x.lineTo(p[0], p[1]); else x.moveTo(p[0], p[1]); });
+    x.strokeStyle = '#ffe9b8'; x.lineWidth = 2; x.stroke();
+    x.fillStyle = '#f6c26b'; x.fillRect(0, DECK, C.CX - 80, 2); x.fillRect(C.CX + 80, DECK, 80, 2);
+    x.fillStyle = '#d8dde6'; x.fillRect(C.CX - 84, DECK - 1, 7, 3); x.fillRect(C.CX + 77, DECK - 1, 7, 3);
+    x.font = '8px ' + FONT; x.textBaseline = 'top'; x.textAlign = 'center';
+    function paint(str, px, py) { x.fillStyle = '#4a2a10'; x.fillText(str, px + 1, py + 1); x.fillStyle = '#ffffff'; x.fillText(str, px, py); }
+    paint('SUNSET', 40, 140); paint('PARK', 40, 152);
+    paint('LOCALS', 280, 140); paint('ONLY', 280, 152);
+    x.fillStyle = COL.hot; x.fillRect(12, 166, 56, 3); x.fillRect(252, 166, 56, 3);
+  }
+
+  /* ---------- text helpers ---------- */
+  function text(ctx, str, px, py, col, align, size) {
+    ctx.font = (size || 8) + 'px ' + FONT;
+    ctx.textBaseline = 'top'; ctx.textAlign = align || 'left';
+    ctx.fillStyle = COL.night; ctx.fillText(str, px + 1, py + 1);
+    ctx.fillStyle = col; ctx.fillText(str, px, py);
+  }
+  function outlined(ctx, str, px, py, col, size) {
+    ctx.font = (size || 8) + 'px ' + FONT;
+    ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+    ctx.fillStyle = COL.night;
+    [[-1, 0], [1, 0], [0, -1], [0, 1], [1, 1], [-1, -1]].forEach(function (d) { ctx.fillText(str, px + d[0], py + d[1]); });
+    ctx.fillStyle = col; ctx.fillText(str, px, py);
+  }
+  function pad(n, len) { return String(Math.max(0, Math.floor(n))).padStart(len, '0'); }
+  function aLabel() { return padMode ? 'A' : 'Z'; }
+  function bLabel() { return padMode ? 'B' : 'X'; }
+
+  /* ---------- events -> particles and callouts ---------- */
+  function burst(px, py, n, cols, spread, up) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = (0.4 + Math.random()) * spread;
+      parts.push({ x: px, y: py, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - up, life: 0.45 + Math.random() * 0.4, c: cols[i % cols.length] });
+    }
+  }
+  function onEvents(list) {
+    list.forEach(function (e) {
+      if (e.type === 'launch' || e.type === 'plantStart' || e.type === 'kickStart') {
+        burst(e.x, e.y, 6, ['#ffffff', COL.sun], 30, 6);
+      } else if (e.type === 'land') {
+        if (e.bail) {
+          burst(e.x, e.y, 16, [COL.red, COL.orange, '#ffffff'], 70, 25);
+          shake = 0.35;
+          floats = [{ text: 'BAIL!', sub: '', x: 160, y: 30, life: 1.8, color: COL.red }];
+        } else if (e.scored) {
+          burst(e.x, e.y, 10, ['#e6c38a', '#c99a4e', '#ffffff'], 50, 12);
+          if (e.sloppy) floats = [{ text: 'SLOPPY ' + e.label, sub: '+' + e.total, x: 160, y: 30, life: 2, color: COL.orange }];
+          else {
+            floats = [{ text: e.label, sub: '+' + e.total + (e.mult > 1.01 ? '  x' + e.mult.toFixed(1) : ''), x: 160, y: 30, life: 2.4, color: COL.teal }];
+            if (e.total >= 1500) burst(160, 40, 18, [COL.sun, COL.hot, COL.teal], 80, 20);
+          }
+        }
+      }
+    });
+  }
+
+  /* ---------- skater ---------- */
+  function drawSkater(ctx) {
+    const S = Game.S;
+    let px, py, tilt = 0, sx = 1, pose = 'ride', bailRot = 0, plantE = -1, boardOff = 0, boardFrame = 0;
+    if (S.mode === 'air' && S.air) {
+      const a = S.air, side = a.side;
+      px = C.CX + side * (C.F + C.R); py = C.FLOOR - a.h;
+      const up = Math.max(0, 1 - a.t / 0.28);
+      const dn = a.vh < 0 ? Math.max(0, 1 - (a.h - C.LIP_H) / 20) : 0;
+      tilt = -side * (Math.PI / 2) * Math.max(up, dn);
+      sx = Math.cos(a.spin) * a.face0;
+      pose = (a.kicking && a.kick < 0.3) ? 'crouch' : 'ride';
+      if (a.kicking) { boardOff = Math.sin(a.kick * Math.PI) * 4; boardFrame = Math.floor(a.kick * 4) % 4; }
+    } else if (S.mode === 'plant' && S.plant) {
+      const P = S.plant, side = P.side;
+      px = C.CX + side * (C.F + C.R); py = DECK;
+      plantE = P.e;
+      tilt = -side * (Math.PI / 2 + (Math.PI / 2 + 0.3) * P.e) + Math.sin(S.t * 18) * 0.03 * P.e;
+      sx = P.face0; pose = 'plant';
+    } else if (S.mode === 'kick' && S.kick) {
+      const K = S.kick, side = K.side, p = K.t / K.dur;
+      px = C.CX + side * (C.F + C.R); py = DECK;
+      tilt = -side * Math.PI / 2 + side * 0.35 * Math.sin(Math.PI * p);
+      sx = Math.cos(Math.PI * p) * K.face0; pose = 'crouch';
+    } else {
+      const sf = Game.surf(S.s);
+      px = C.CX + sf.x; py = C.FLOOR - sf.h;
+      tilt = -sf.sg * sf.alpha;
+      sx = S.rFace;
+      if (S.pumping === 1) pose = (sf.slope * S.v) < 0 ? 'crouch' : 'ride';
+      if (S.mode === 'bail') { pose = 'crouch'; bailRot = S.bailT * 9 * (S.v >= 0 ? 1 : -1); py -= 2; }
+    }
+    if (Math.abs(sx) < 0.2) sx = sx < 0 ? -0.2 : 0.2;
+    ctx.save();
+    ctx.translate(Math.round(px), Math.round(py));
+    ctx.rotate(tilt);
+    if (plantE >= 0) {
+      ctx.translate(0, 27 * plantE);
+      ctx.scale(sx, 1);
+      ctx.drawImage(spr.board[0], -10, -8);
+      ctx.drawImage(spr.body[pose], -12, -28);
+    } else {
+      ctx.translate(0, -11);
+      ctx.rotate(bailRot);
+      ctx.scale(sx, 1);
+      ctx.drawImage(spr.board[boardFrame], -10, 3 - boardOff);
+      ctx.drawImage(spr.body[pose], -12, -17);
+    }
+    ctx.restore();
+  }
+
+  /* ---------- HUD and overlays ---------- */
+  function panel(ctx, px, py, w, h) {
+    ctx.fillStyle = 'rgba(18,13,46,0.86)'; ctx.fillRect(px, py, w, h);
+    ctx.fillStyle = COL.hot; ctx.fillRect(px, py, w, 1); ctx.fillRect(px, py + h - 1, w, 1);
+    ctx.fillRect(px, py, 1, h); ctx.fillRect(px + w - 1, py, 1, h);
+  }
+  function hintText() {
+    const S = Game.S;
+    if (S.state !== 'play' || S.timeUp && S.mode !== 'air') return '';
+    const learning = (C.ROUND - S.time) < 14 || S.sinceAir > 9;
+    if (S.mode === 'ride' && learning) {
+      const sf = Game.surf(S.s), rate = sf.slope * S.v;
+      if (Math.abs(sf.slope) < 0.06) return Math.abs(S.v) < 25 ? 'HOLD LEFT/RIGHT TO PUSH OFF' : 'UP GOING UP, DOWN GOING DOWN';
+      if (rate > 2) return sf.h > 50 && (S.plants + S.kickTurns) < 2 ? aLabel() + ': HANDPLANT  LEFT/RIGHT: KICK TURN' : 'HOLD UP TO PUMP';
+      if (rate < -2) return 'HOLD DOWN TO PUMP';
+      return '';
+    }
+    if (S.mode === 'air' && S.airs < 2) return 'LEFT/RIGHT TURN  ' + bLabel() + ' KICKFLIP';
+    if (S.mode === 'plant') return 'HOLD ' + aLabel() + ' TO STAY UP';
+    return '';
+  }
+  function drawHud(ctx) {
+    const S = Game.S;
+    text(ctx, 'SCORE ' + pad(S.score, 6), 4, 3, COL.ink, 'left');
+    const secs = Math.ceil(S.time);
+    const blink = S.state === 'play' && secs <= 10 && Math.floor(S.t * 4) % 2 === 0;
+    text(ctx, 'TIME ' + pad(secs, 2), W - 4, 3, blink ? COL.red : COL.ink, 'right');
+    if (S.combo > 0) text(ctx, 'COMBO x' + S.combo, 160, 3, COL.sun, 'center');
+    text(ctx, 'SPEED', 4, 14, COL.ink, 'left');
+    const bx = 48, by = 14, bw = 64, bh = 7;
+    ctx.fillStyle = COL.night; ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+    ctx.fillStyle = '#3a2c7a'; ctx.fillRect(bx, by, bw, bh);
+    const sp = Game.energySpeed();
+    ctx.fillStyle = sp >= C.AIR_LINE ? COL.teal : COL.hot;
+    ctx.fillRect(bx, by, Math.round(bw * Math.min(1, sp / C.VMAX)), bh);
+    const lx = bx + Math.round(bw * C.AIR_LINE / C.VMAX);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(lx, by - 2, 1, bh + 4);
+    if (S.pumping === 1) text(ctx, '+', bx + bw + 6, 14, COL.teal, 'left');
+    else if (S.pumping === -1) text(ctx, '-', bx + bw + 6, 14, COL.red, 'left');
+    if (S.last && S.last.judges && S.t - S.lastAt < 3.2) {
+      text(ctx, 'JUDGES ' + S.last.judges.map(function (v) { return v.toFixed(1); }).join(' '), W - 4, 14, COL.sun, 'right');
+    }
+    floats = floats.filter(function (f) { return f.life > 0; });
+    floats.forEach(function (f) {
+      ctx.globalAlpha = Math.min(1, f.life / 0.4);
+      outlined(ctx, f.text, f.x, f.y, f.color, 8);
+      if (f.sub) outlined(ctx, f.sub, f.x, f.y + 11, COL.sun, 8);
+      ctx.globalAlpha = 1;
+    });
+    const hint = hintText();
+    if (hint) outlined(ctx, hint, 160, 178, COL.ink, 8);
+    if (S.state === 'play' && S.timeUp && S.mode !== 'ride') outlined(ctx, 'TIME! FINISH THE TRICK', 160, 166, COL.sun, 8);
+  }
+  function drawTitle(ctx, best) {
+    panel(ctx, 36, 36, 248, 128);
+    text(ctx, 'HALF PIPE', 160, 46, COL.sun, 'center', 16);
+    text(ctx, 'SUNSET SESSION', 160, 68, COL.hot, 'center');
+    text(ctx, 'UP/DOWN: PUMP THE RAMP', 160, 80, COL.ink, 'center');
+    text(ctx, aLabel() + ': HOLD AT LIP, HANDPLANT', 160, 90, COL.ink, 'center');
+    text(ctx, 'LEFT/RIGHT AT LIP: KICK TURN', 160, 100, COL.ink, 'center');
+    text(ctx, 'IN AIR: LEFT/RIGHT TURN', 160, 110, COL.ink, 'center');
+    text(ctx, 'IN AIR: ' + bLabel() + ' KICKFLIP', 160, 120, COL.ink, 'center');
+    text(ctx, 'LAND CLEAN TO KEEP COMBO', 160, 131, COL.teal, 'center');
+    if (Math.floor(performance.now() / 450) % 2 === 0) text(ctx, padMode ? 'PRESS START' : 'PRESS SPACE OR TAP', 160, 142, COL.sun, 'center');
+    text(ctx, 'HIGH SCORE ' + pad(best, 6), 160, 153, COL.dim, 'center');
+  }
+  function drawOver(ctx, best, newBest) {
+    const S = Game.S;
+    panel(ctx, 40, 30, 240, 142);
+    text(ctx, 'TIME!', 160, 40, COL.sun, 'center', 16);
+    text(ctx, 'SCORE ' + pad(S.score, 6), 160, 63, COL.ink, 'center');
+    text(ctx, 'AIRS ' + S.cleanAirs + '/' + S.airs + '  BAILS ' + S.bails, 160, 76, COL.ink, 'center');
+    text(ctx, 'PLANTS ' + S.plants + '  KICK TURNS ' + S.kickTurns, 160, 88, COL.ink, 'center');
+    text(ctx, 'BEST AIR ' + S.bestAir + ' PX', 160, 100, COL.ink, 'center');
+    if (S.bestTrick) {
+      text(ctx, 'TOP MOVE', 160, 113, COL.dim, 'center');
+      text(ctx, S.bestTrick.length > 28 ? S.bestTrick.slice(0, 28) : S.bestTrick, 160, 124, COL.teal, 'center');
+    }
+    text(ctx, newBest ? 'NEW HIGH SCORE!' : 'HIGH SCORE ' + pad(best, 6), 160, 138, newBest ? COL.hot : COL.sun, 'center');
+    if (S.t - S.overAt > 0.9 && Math.floor(performance.now() / 450) % 2 === 0) text(ctx, padMode ? 'START OR TAP TO RIDE AGAIN' : 'SPACE OR TAP TO RIDE AGAIN', 160, 154, COL.sun, 'center');
+  }
+
+  /* ---------- frame ---------- */
+  function draw(ctx, dt, best, newBest, paused) {
+    const S = Game.S;
+    ctx.imageSmoothingEnabled = false;
+    if (S.pumping === 1 && S.mode === 'ride') {
+      sparkT -= dt;
+      if (sparkT <= 0) {
+        sparkT = 0.07;
+        const sf = Game.surf(S.s);
+        burst(C.CX + sf.x, C.FLOOR - sf.h - 1, 1, [COL.sun, '#ffffff'], 24, 6);
+      }
+    }
+    ctx.save();
+    if (shake > 0) { shake -= dt; ctx.translate(Math.round((Math.random() - 0.5) * 4), Math.round((Math.random() - 0.5) * 4)); }
+    ctx.drawImage(bg, 0, 0);
+    drawSkater(ctx);
+    parts = parts.filter(function (p) { return p.life > 0; });
+    parts.forEach(function (p) {
+      p.life -= dt; p.vy += 180 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      ctx.fillStyle = p.c; ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2);
+    });
+    floats.forEach(function (f) { f.life -= dt; });
+    ctx.restore();
+    drawHud(ctx);
+    if (S.state === 'title') drawTitle(ctx, best);
+    else if (S.state === 'over') drawOver(ctx, best, newBest);
+    if (paused) {
+      panel(ctx, 60, 70, 200, 60);
+      text(ctx, 'PAUSED', 160, 82, COL.sun, 'center', 16);
+      text(ctx, padMode ? 'START TO RESUME' : 'ENTER OR P TO RESUME', 160, 108, COL.ink, 'center');
+    }
+  }
+
+  buildSprites();
+  buildBg();
+  return { draw: draw, onEvents: onEvents, rebuild: buildBg, setPad: function (v) { padMode = !!v; } };
+})();
+/* ===== Sound, input and main loop ===== */
+const Sound = (function () {
+  let ac = null, muted = false;
+  function unlock() {
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; } }
+    if (ac && ac.state === 'suspended') { ac.resume().catch(function () {}); }
+  }
+  function tone(f0, f1, dur, type, vol, delay) {
+    if (!ac || muted) return;
+    const t = ac.currentTime + (delay || 0);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || 'square';
+    o.frequency.setValueAtTime(f0, t);
+    if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(vol || 0.05, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function play(e) {
+    if (e.type === 'pumpTick') tone(380, 560, 0.06, 'square', 0.025);
+    else if (e.type === 'launch') tone(260, 700, 0.22, 'triangle', 0.08);
+    else if (e.type === 'plantStart') tone(300, 620, 0.16, 'triangle', 0.07);
+    else if (e.type === 'kickStart') tone(520, 340, 0.12, 'square', 0.05);
+    else if (e.type === 'flip') tone(400, 900, 0.18, 'square', 0.04);
+    else if (e.type === 'land') {
+      if (e.bail) { tone(220, 40, 0.45, 'sawtooth', 0.09); }
+      else if (e.scored) {
+        tone(140, 60, 0.12, 'square', 0.08);
+        if (e.clean) { tone(660, 660, 0.08, 'square', 0.05, 0.08); tone(880, 880, 0.1, 'square', 0.05, 0.16); if (e.total > 1000) tone(1320, 1320, 0.16, 'square', 0.05, 0.26); }
+        else tone(300, 200, 0.15, 'sawtooth', 0.05, 0.08);
+      } else tone(150, 90, 0.06, 'square', 0.04);
+    }
+    else if (e.type === 'timeup') { tone(880, 880, 0.12, 'square', 0.06); tone(880, 880, 0.12, 'square', 0.06, 0.18); tone(1320, 1320, 0.3, 'square', 0.06, 0.36); }
+  }
+  return {
+    unlock: unlock, play: play,
+    toggle: function () { muted = !muted; return muted; }
+  };
+})();
+
+(function () {
+  const body = document.body;
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const KEY = 'sunset-half-pipe-best';
+  let best = 0, newBest = false, paused = false;
+  try { best = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (e) { best = 0; }
+  const bestEl = document.getElementById('best');
+  function showBest() { bestEl.textContent = 'BEST ' + String(best).padStart(6, '0'); }
+  showBest();
+
+  // redraw the background once the pixel font has loaded so the painted lettering uses it
+  try {
+    if (document.fonts && document.fonts.load) {
+      document.fonts.load('8px "Press Start 2P"').then(function () { Render.rebuild(); }).catch(function () {});
+    }
+  } catch (e) {}
+
+  /* ---------- layout: controller on or off, landscape or portrait ---------- */
+  const center = document.querySelector('.center');
+  const sysbtns = document.querySelector('.sysbtns');
+  const rotateEl = document.getElementById('rotate');
+  const padBtn = document.getElementById('padtoggle');
+  const touch = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
+  if (touch) body.classList.add('touch');
+
+  function fit() {
+    const padOn = body.classList.contains('padon');
+    const landscape = window.innerWidth > window.innerHeight;
+    const immersive = touch && padOn && landscape;
+    body.classList.toggle('immersive', immersive);
+    rotateEl.hidden = !(touch && padOn && !landscape);
+    if (!immersive) { cv.style.width = ''; cv.style.height = ''; return; }
+    // the game screen is 16:10, so it fills the height and the pad floats over the spare side space
+    const scale = Math.min(window.innerWidth / 320, window.innerHeight / 200);
+    if (!(scale > 0.4)) return;
+    cv.style.width = Math.floor(320 * scale) + 'px';
+    cv.style.height = Math.floor(200 * scale) + 'px';
+  }
+  function setPad(on) {
+    body.classList.toggle('padon', on);
+    padBtn.textContent = on ? 'PAD ON' : 'PAD OFF';
+    padBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    Render.setPad(on);
+    fit();
+  }
+  padBtn.addEventListener('click', function () { setPad(!body.classList.contains('padon')); });
+  window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', function () { fit(); setTimeout(fit, 250); });
+  setPad(touch);
+  setTimeout(fit, 120);
+
+  /* ---------- actions ---------- */
+  // pad directions plus the A button, which is held for a handplant
+  const input = { left: false, right: false, up: false, down: false, a: false };
+  const keymap = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down' };
+
+  // start, restart or resume. Returns true when it did one of those.
+  function act() {
+    const S = Game.S;
+    if (paused) { paused = false; return true; }
+    if (S.state === 'title') { newBest = false; Game.start(); return true; }
+    if (S.state === 'over') { if (S.t - S.overAt > 0.9) { newBest = false; Game.start(); } return true; }
+    return false;
+  }
+  function pressB() { if (!act()) Game.press('b'); }
+  function pressA() { act(); }
+  function togglePause() { if (Game.S.state === 'play') paused = !paused; }
+  function startPress() { if (Game.S.state === 'play') togglePause(); else act(); }
+
+  const muteBtn = document.getElementById('mute');
+  function toggleMute() {
+    Sound.unlock();
+    const m = Sound.toggle();
+    muteBtn.textContent = m ? 'SOUND OFF' : 'SOUND ON';
+    muteBtn.setAttribute('aria-pressed', m ? 'true' : 'false');
+  }
+  muteBtn.addEventListener('click', toggleMute);
+
+  /* ---------- keyboard ---------- */
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'KeyM') { toggleMute(); return; }
+    if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat) togglePause(); return; }
+    const k = keymap[e.code];
+    const handled = k || e.code === 'KeyZ' || e.code === 'KeyX' || e.code === 'Space' || e.code === 'Enter';
+    if (handled) e.preventDefault();
+    Sound.unlock();
+    if (k) { input[k] = true; return; }
+    if (e.repeat) return;
+    if (e.code === 'KeyZ') { input.a = true; pressA(); }
+    else if (e.code === 'KeyX' || e.code === 'Space') pressB();
+    else if (e.code === 'Enter') startPress();
+  });
+  window.addEventListener('keyup', function (e) {
+    const k = keymap[e.code];
+    if (k) { input[k] = false; e.preventDefault(); }
+    else if (e.code === 'KeyZ') { input.a = false; e.preventDefault(); }
+  });
+  function autoPause() {
+    input.left = input.right = input.up = input.down = input.a = false;
+    if (Game.S.state === 'play') paused = true;
+  }
+  window.addEventListener('blur', autoPause);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) autoPause(); });
+
+  cv.addEventListener('pointerdown', function (e) {
+    Sound.unlock();
+    cv.focus();
+    if (Game.S.state !== 'play' || paused) { e.preventDefault(); act(); }
+  });
+
+  /* ---------- controller: A, B, Start and Select ---------- */
+  document.querySelectorAll('.side button, .sysbtns button').forEach(function (b) {
+    const hold = b.getAttribute('data-hold'), tap = b.getAttribute('data-tap');
+    b.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      Sound.unlock();
+      try { b.setPointerCapture(e.pointerId); } catch (err) {}
+      b.classList.add('on');
+      if (hold === 'a') { input.a = true; pressA(); }
+      else if (tap === 'b') pressB();
+      else if (tap === 'start') startPress();
+      else if (tap === 'select') toggleMute();
+    });
+    function release() { b.classList.remove('on'); if (hold === 'a') input.a = false; }
+    b.addEventListener('pointerup', release);
+    b.addEventListener('pointercancel', release);
+    b.addEventListener('lostpointercapture', release);
+  });
+
+  /* ---------- controller: D-pad (one surface, so a thumb can roll between directions) ---------- */
+  const dpad = document.getElementById('dpad');
+  const arms = { u: dpad.querySelector('.u'), d: dpad.querySelector('.d'), l: dpad.querySelector('.l'), r: dpad.querySelector('.r') };
+  let dpadPointer = null;
+  function setDir(dx, dy) {
+    const dead = 0.22;
+    const L = dx < -dead, R = dx > dead, U = dy < -dead, D = dy > dead;
+    input.left = L; input.right = R; input.up = U; input.down = D;
+    arms.l.classList.toggle('on', L); arms.r.classList.toggle('on', R);
+    arms.u.classList.toggle('on', U); arms.d.classList.toggle('on', D);
+  }
+  function dpadMove(e) {
+    const r = dpad.getBoundingClientRect();
+    setDir((e.clientX - (r.left + r.width / 2)) / (r.width / 2), (e.clientY - (r.top + r.height / 2)) / (r.height / 2));
+  }
+  dpad.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    Sound.unlock();
+    try { dpad.setPointerCapture(e.pointerId); } catch (err) {}
+    dpadPointer = e.pointerId;
+    dpadMove(e);
+  });
+  dpad.addEventListener('pointermove', function (e) { if (e.pointerId === dpadPointer) dpadMove(e); });
+  function dpadRelease(e) { if (e.pointerId === dpadPointer) { dpadPointer = null; setDir(0, 0); } }
+  dpad.addEventListener('pointerup', dpadRelease);
+  dpad.addEventListener('pointercancel', dpadRelease);
+  dpad.addEventListener('lostpointercapture', dpadRelease);
+
+  /* ---------- loop ---------- */
+  function handle(list) {
+    if (!list.length) return;
+    Render.onEvents(list);
+    list.forEach(function (e) {
+      Sound.play(e);
+      if (e.type === 'over') {
+        if (Game.S.score > best) {
+          best = Game.S.score; newBest = true;
+          try { localStorage.setItem(KEY, String(best)); } catch (err) {}
+          showBest();
+        }
+      }
+    });
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+    last = now;
+    if (!paused) {
+      Game.update(dt, input);
+      handle(Game.drain());
+    }
+    Render.draw(ctx, paused ? 0 : dt, best, newBest, paused);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
