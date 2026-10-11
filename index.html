@@ -218,8 +218,6 @@ body.immersive .sys button { width: 36px; height: 11px; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 </style>
 
-</head>
-<body>
 <main class="wrap">
   <header>
     <h1>SUNSET HALF PIPE</h1>
@@ -253,7 +251,7 @@ body.immersive .sys button { width: 36px; height: 11px; }
     <aside class="side right" aria-label="Right side of the controller">
       <div class="ab" role="group" aria-label="A and B buttons">
         <div class="abcol"><button type="button" class="nes" data-tap="b" aria-label="B button, kickflip in the air">B</button><span class="fn">KICK</span></div>
-        <div class="abcol"><button type="button" class="nes" data-hold="a" aria-label="A button, hold at the lip for a handplant">A</button><span class="fn">PLANT</span></div>
+        <div class="abcol"><button type="button" class="nes" data-hold="a" aria-label="A button: hold at the lip for a handplant, hold in the air for a grab">A</button><span class="fn">PLANT/GRAB</span></div>
       </div>
       <p class="caption">HOLD A AT THE LIP<br>B IN THE AIR</p>
     </aside>
@@ -261,20 +259,20 @@ body.immersive .sys button { width: 36px; height: 11px; }
 
   <ul class="legend">
     <li><kbd>UP DOWN</kbd><span>Up while rising, down while dropping, to pump speed.</span></li>
-    <li><kbd>Z</kbd><span>Hold as you reach the lip for a handplant.</span></li>
+    <li><kbd>Z</kbd><span>Hold as you reach the lip for a handplant, or hold in the air to grab the board.</span></li>
     <li><kbd>LEFT RIGHT</kbd><span>Hold at the lip for a kick turn. Hold in the air for an aerial turn.</span></li>
-    <li><kbd>X</kbd><span>Kickflip in the air. Space works too.</span></li>
+    <li><kbd>X</kbd><span>Kickflip in the air. Space works too. On the title screen, X opens how to play.</span></li>
     <li><kbd>ENTER</kbd><span>Start or pause. P also pauses.</span></li>
-    <li><kbd>M</kbd><span>Sound on or off.</span></li>
+    <li><kbd>M</kbd><span>Sound: music and effects, effects only, or off.</span></li>
   </ul>
-  <p class="note">Rock the pad up and down with the skater to build speed. Once the speed bar passes the white air line you leave the lip. What you hold when you reach the lip decides the move: A for a handplant, left or right for a kick turn, nothing for a launch. Stopped on the flat? Hold left or right to push off.</p>
+  <p class="note">Rock the pad up and down with the skater to build speed. Once the speed bar passes the white air line you leave the lip. What you hold when you reach the lip decides the move: A for a handplant, left or right for a kick turn, nothing for a launch. In the air, hold A to grab the board. Spin or flip before or after the grab, and let go before you land. Stopped on the flat? Hold left or right to push off.</p>
 </main>
 
 <script>
 /* ===== Engine: pure simulation, no DOM ===== */
 const Game = (function () {
   const TAU = Math.PI * 2;
-  const C = { W: 320, H: 200, CX: 160, FLOOR: 182, F: 22, R: 58, EXT: 14, GRAV: 260, VMAX: 262, FRIC: 0.09, ROUND: 60, PUMP: 38 };
+  const C = { W: 320, H: 200, CX: 160, FLOOR: 182, F: 22, R: 58, EXT: 14, GRAV: 260, VMAX: 262, FRIC: 0.05, ROUND: 60, PUMP: 70, PUSH: 120, ASSIST: 1, ASSIST_START: 6, ASSIST_RAMP: 8 };
   C.ARC = Math.PI * C.R / 2;
   C.S_TOP = C.F + C.ARC + C.EXT;
   C.LIP_H = C.R + C.EXT;
@@ -313,9 +311,11 @@ const Game = (function () {
   // One flip at a time, with one press buffered, and three at most per air.
   function startKickflip() {
     const a = S.air;
+    if (a.grab > 0.3 || a.holding) return;   // the board is in your hand, so flip before or after the grab
     if (a.kicks + (a.kicking ? 1 : 0) + a.queued >= 3) return;
     if (a.kicking) { if (a.queued < 1) a.queued++; return; }
     a.kicking = true; a.kick = 0;
+    if (a.kickFirst < 0) a.kickFirst = a.t;
     events.push({ type: 'flip' });
   }
 
@@ -406,7 +406,8 @@ const Game = (function () {
     S.mode = 'air';
     S.air = {
       side: side, h: C.LIP_H, vh: vh, t: 0, apex: 0, face0: S.face,
-      kick: 0, kicking: false, kicks: 0, queued: 0, spin: 0
+      kick: 0, kicking: false, kicks: 0, queued: 0, spin: 0,
+      grab: 0, holding: false, grabHold: 0, grabFirst: -1, kickFirst: -1, spinFirst: -1
     };
     events.push({ type: 'launch', x: C.CX + side * (C.F + C.R), y: C.FLOOR - C.LIP_H, vh: vh });
   }
@@ -417,7 +418,9 @@ const Game = (function () {
     const scored = a.apex > 4;
     // landing with the board mid-flip: bail if it is well off your feet, sloppy if it is nearly round
     const bail = scored && a.kicking && a.kick > 0.25 && a.kick < 0.75;
-    const sloppy = scored && !bail && (sErr > 0.62 || a.kicking);
+    const grabbed = a.grabHold >= 0.15;
+    const grabLate = a.grab > 0.5;   // still holding the board when the wheels hit
+    const sloppy = scored && !bail && (sErr > 0.62 || a.kicking || grabLate);
 
     S.mode = 'ride';
     S.s = side * (C.S_TOP - 0.01);
@@ -434,9 +437,13 @@ const Game = (function () {
       const names = [];
       let pts = Math.round(a.apex * 6), types = 0;
       if (!bail) {
-        if (n > 0) { pts += Math.round(120 * n * (1 + 0.35 * (n - 1))); names.push(n === 1 ? 'AERIAL 180' : 'AERIAL ' + (n * 180)); types++; }
+        const parts = [];   // [time first seen, label] so the name reads in the order you did them
+        if (n > 0) { pts += Math.round(120 * n * (1 + 0.35 * (n - 1))); parts.push([a.spinFirst, n === 1 ? 'AERIAL 180' : 'AERIAL ' + (n * 180)]); types++; }
         const nk = a.kicks;
-        if (nk > 0) { pts += 260 * nk; names.push(nk === 1 ? 'KICKFLIP' : nk === 2 ? 'DOUBLE KICKFLIP' : 'TRIPLE KICKFLIP'); types++; }
+        if (nk > 0) { pts += 260 * nk; parts.push([a.kickFirst, nk === 1 ? 'KICKFLIP' : nk === 2 ? 'DOUBLE KICKFLIP' : 'TRIPLE KICKFLIP']); types++; }
+        if (grabbed) { pts += 220 + Math.round(380 * Math.min(1, a.grabHold / 0.8)); parts.push([a.grabFirst, 'GRAB']); types++; }
+        parts.sort(function (p, q) { return p[0] - q[0]; });
+        parts.forEach(function (p) { names.push(p[1]); });
       }
       const variety = 1 + 0.3 * Math.max(0, types - 1);
       const comboMult = 1 + 0.25 * Math.min(S.combo, 8);
@@ -481,7 +488,9 @@ const Game = (function () {
     const bad = (inp.up && rate < -2) || (inp.down && rate > 2);
     if (good) {
       const eq = Math.sqrt(S.v * S.v + 2 * C.GRAV * sf.h);
-      if (eq < C.VMAX) S.v += Math.sign(S.v) * C.PUMP * dt;
+      // catch-up help: the longer since your last air or trick, the stronger the pump
+      const help = 1 + C.ASSIST * Math.min(1, Math.max(0, S.sinceAir - C.ASSIST_START) / C.ASSIST_RAMP);
+      if (eq < C.VMAX) S.v += Math.sign(S.v) * C.PUMP * help * dt;
       S.pumping = 1;
       S.pumpTick -= dt;
       if (S.pumpTick <= 0) { S.pumpTick = 0.16; events.push({ type: 'pumpTick' }); }
@@ -519,14 +528,35 @@ const Game = (function () {
     }
   }
 
+  // standing on the coping, tail on the deck. Pad down drops you in and starts the clock.
+  function stepReady(dt, inp) {
+    S.ready.t += dt;
+    S.sinceAir = 0;
+    if (S.ready.t > 0.35 && inp.down) {
+      S.mode = 'ride'; S.ready = null;
+      S.s = -(C.S_TOP - 0.01);
+      // same energy as the old start (120 at the foot of the vertical), so the balance is unchanged
+      S.v = Math.sqrt(C.PUSH * C.PUSH - 2 * C.GRAV * C.EXT);
+      events.push({ type: 'dropin', x: C.CX - (C.F + C.R), y: C.FLOOR - C.LIP_H });
+    }
+  }
+
   function stepAir(dt, inp) {
     const a = S.air;
     a.t += dt;
     const dirIn = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
 
+    // grab: hold A in the air. Not while a flip is spinning, and flips wait until you let go.
+    const want = !!inp.a && !a.kicking && a.queued === 0;
+    if (want && !a.holding && a.grab < 0.05) events.push({ type: 'grab' });
+    a.holding = want;
+    a.grab = Math.max(0, Math.min(1, a.grab + (want ? 1 : -1) * dt / 0.12));
+    if (a.grab > 0.6) { a.grabHold += dt; if (a.grabFirst < 0) a.grabFirst = a.t; }
+
     // aerial turn: hold left or right once you are off the lip
     if (dirIn !== 0) {
       a.spin += dirIn * (TAU / 0.6) * dt;
+      if (a.spinFirst < 0 && Math.abs(a.spin) > 1.2) a.spinFirst = a.t;
     } else {
       const tgt = Math.round(a.spin / Math.PI) * Math.PI;
       const d = tgt - a.spin, step = 2.5 * dt;
@@ -549,11 +579,12 @@ const Game = (function () {
   function sub(dt, inp) {
     S.t += dt;
     S.sinceAir += dt;
-    if (S.state === 'play' && !S.timeUp) {
+    if (S.state === 'play' && !S.timeUp && S.mode !== 'ready') {
       S.time -= dt;
       if (S.time <= 0) { S.time = 0; S.timeUp = true; events.push({ type: 'timeup' }); }
     }
-    if (S.mode === 'air') stepAir(dt, inp);
+    if (S.mode === 'ready') stepReady(dt, inp);
+    else if (S.mode === 'air') stepAir(dt, inp);
     else if (S.mode === 'plant') stepPlant(dt, inp);
     else if (S.mode === 'kick') stepKick(dt);
     else stepSurface(dt, inp);
@@ -572,6 +603,7 @@ const Game = (function () {
 
   function energySpeed() {
     if (S.mode === 'air' && S.air) return Math.sqrt(S.air.vh * S.air.vh + 2 * C.GRAV * S.air.h);
+    if (S.mode === 'ready') return 0;
     if (S.mode === 'plant' || S.mode === 'kick') return C.AIR_LINE;
     const sf = surf(S.s);
     return Math.sqrt(S.v * S.v + 2 * C.GRAV * sf.h);
@@ -579,7 +611,11 @@ const Game = (function () {
 
   return {
     C: C, S: S, surf: surf, update: update, press: press, energySpeed: energySpeed,
-    start: function () { fresh('play'); },
+    // start on the coping; stepReady does the drop-in
+    start: function () {
+      fresh('play');
+      S.mode = 'ready'; S.s = -C.S_TOP; S.v = 0; S.ready = { t: 0 };
+    },
     toTitle: function () { fresh('title'); },
     drain: function () { const e = events; events = []; return e; }
   };
@@ -594,7 +630,10 @@ const Render = (function () {
     wood: '#b8742c', hot: '#ff2f8e', sun: '#ffd34d', teal: '#2ee6c8', red: '#ff4b4b', orange: '#ff9f43'
   };
   const spr = { body: {}, board: [] };
-  let bg = null;
+  let bg = null, bgF = null;
+  let crowdT = 0, excite = 0;
+  const VERSION = 'V14';   // shown on the title and pause screens so feedback can be matched to a build
+  const AIR_TILT = 60 * Math.PI / 180;   // how far the skater leans from upright while airborne
   let parts = [];
   let floats = [];
   let shake = 0;
@@ -607,8 +646,9 @@ const Render = (function () {
   function bodySprite(pose) {
     const c = mk(24, 32), x = c.getContext('2d'), ox = 12, oy = 28;
     const R = function (a, b, w, h, col) { x.fillStyle = col; x.fillRect(ox + a, oy + b, w, h); };
-    const crouch = pose === 'crouch';
-    const lg = crouch ? 3 : 5, top = -6 - lg;
+    const grab = pose === 'grab';
+    const crouch = pose === 'crouch' || grab;
+    const lg = grab ? 2 : crouch ? 3 : 5, top = -6 - lg;
     R(-5, -6, 4, 2, COL.shoe); R(2, -6, 4, 2, COL.shoe);
     R(-4, -6 - lg, 3, lg, COL.pants); R(3, -6 - lg, 3, lg, COL.pants);
     R(-4, top - 6, 9, 6, COL.shirt);
@@ -620,6 +660,10 @@ const Render = (function () {
       // arms straight past the head: in the handstand these are the ones on the coping
       R(-6, -27, 2, 11, COL.skin);
       R(5, -27, 2, 11, COL.skin);
+    } else if (grab) {
+      // knees bent, front hand down on the rail of the board, back arm out for balance
+      R(5, top - 5, 2, 9, COL.skin);
+      R(-8, top - 4, 4, 2, COL.skin);
     } else if (crouch) {
       R(-6, top - 4, 2, 3, COL.skin);
       R(5, top - 4, 3, 2, COL.skin);
@@ -644,108 +688,223 @@ const Render = (function () {
     return c;
   }
   function buildSprites() {
-    ['ride', 'crouch', 'plant'].forEach(function (p) { spr.body[p] = bodySprite(p); });
+    ['ride', 'crouch', 'grab', 'plant'].forEach(function (p) { spr.body[p] = bodySprite(p); });
     for (let i = 0; i < 4; i++) spr.board[i] = boardSprite(i);
   }
 
   /* ---------- background (drawn once, redrawn when the pixel font arrives) ---------- */
-  function palm(g, bx, by) {
-    const ty = by - 50;
-    for (let i = 0; i < 13; i++) {
-      const px = bx + Math.round(Math.sin(i / 4) * 3);
-      g.fillStyle = i % 2 ? '#4a2a12' : '#5e3818';
-      g.fillRect(px, by - i * 4, 4, 4);
-    }
-    const tipX = bx + Math.round(Math.sin(12 / 4) * 3) + 2;
-    [-170, -140, -105, -75, -40, -10].forEach(function (deg) {
-      const a = deg * Math.PI / 180;
-      for (let t = 0; t < 16; t++) {
-        const px = tipX + Math.cos(a) * t * 1.7;
-        const py = ty + Math.sin(a) * t * 0.9 + t * t * 0.05;
-        g.fillStyle = (t % 4 < 2) ? '#1f9a4a' : '#136b34';
-        g.fillRect(Math.round(px), Math.round(py), 2, 2);
-      }
-    });
-    g.fillStyle = '#7a4a1a'; g.fillRect(tipX - 2, ty + 1, 3, 3); g.fillRect(tipX + 1, ty + 3, 3, 3);
-  }
   function buildBg() {
     bg = bg || mk(W, H);
-    const x = bg.getContext('2d');
+    let x = bg.getContext('2d');
     x.imageSmoothingEnabled = false;
-    const sky = ['#1d1b6e', '#2a2288', '#3a2a9e', '#5330a8', '#7a35a8', '#a63aa0', '#d14a98', '#f2607f', '#ff8264', '#ffa75a', '#ffc860', '#ffe58a'];
-    sky.forEach(function (c, i) { x.fillStyle = c; x.fillRect(0, i * 7, W, 7); });
-    for (let i = 0; i < 26; i++) {
-      const sx = (i * 97 + 31) % W, sy = (i * 53 + 7) % 34;
-      x.fillStyle = i % 3 ? '#c9b8ff' : '#ffffff'; x.fillRect(sx, sy, 1, 1);
+    // ---- stadium: a strip of dusk sky over tiers of bleachers ----
+    ['#1d1b6e', '#2a2288', '#3a2a9e', '#5330a8', '#7a35a8'].forEach(function (c, i) { x.fillStyle = c; x.fillRect(0, i * 8, W, 8); });
+    for (let i = 0; i < 14; i++) { x.fillStyle = i % 3 ? '#c9b8ff' : '#ffffff'; x.fillRect((i * 97 + 31) % W, (i * 53 + 7) % 28, 1, 1); }
+    x.fillStyle = '#17133a'; x.fillRect(0, 36, W, 4);
+    for (let px = 14; px < W; px += 36) {
+      x.fillStyle = '#17133a'; x.fillRect(px + 2, 32, 1, 4);
+      x.fillStyle = '#fff3b0'; x.fillRect(px, 30, 5, 3);
+      x.fillStyle = 'rgba(255,243,176,0.22)'; x.fillRect(px - 3, 33, 11, 3);
     }
-    const HZ = 84, cx = 160;
-    for (let y = 46; y < HZ; y++) {
-      const dy = HZ - y, half = Math.floor(Math.sqrt(36 * 36 - dy * dy));
-      const gapRows = Math.floor((y - 56) / 9);
-      if (y > 56 && ((y - 56) % 7) < gapRows) continue;
-      const k = (y - 46) / (HZ - 46);
-      x.fillStyle = 'rgb(255,' + Math.round(246 - k * 108) + ',' + Math.round(176 - k * 100) + ')';
-      x.fillRect(cx - half, y, half * 2, 1);
-    }
-    x.fillStyle = '#ff9ab8'; x.fillRect(34, 40, 30, 3); x.fillRect(42, 37, 18, 3);
-    x.fillRect(246, 28, 34, 3); x.fillRect(254, 25, 20, 3);
-    x.fillStyle = '#ffc3cf'; x.fillRect(38, 41, 18, 1); x.fillRect(252, 29, 22, 1);
-    x.fillStyle = '#1b5fa8'; x.fillRect(0, HZ, W, 28);
-    for (let y = HZ + 2; y < HZ + 28; y += 4) {
-      for (let px = ((y * 7) % 23); px < W; px += 23) {
-        x.fillStyle = '#3fa3e0'; x.fillRect(px, y, 9 + (y % 3) * 3, 1);
+    const seatCols = ['#4a4690', '#4a4690', '#5a3a90', '#3d5aa0', '#4a4690'];
+    for (let i = 0; i < 11; i++) {
+      const yT = 40 + 12 * i;
+      x.fillStyle = '#27224f'; x.fillRect(0, yT, W, 12);
+      x.fillStyle = '#2f2a5e'; x.fillRect(0, yT + 1, W, 1);
+      for (let px = 0; px < W; px += 20) {
+        x.fillStyle = seatCols[(px / 20 + i * 3) % seatCols.length]; x.fillRect(px, yT + 8, 19, 4);
+        x.fillStyle = '#6a64b8'; x.fillRect(px, yT + 8, 19, 1);
       }
     }
-    for (let y = HZ + 1, i = 0; y < HZ + 26; y += 3, i++) {
-      const w = Math.max(6, 46 - i * 4), off = (i % 2) * 5;
-      x.fillStyle = i % 2 ? '#ffc860' : '#fff0a8';
-      x.fillRect(cx - (w >> 1) + off, y, w, 1);
-    }
-    x.fillStyle = '#f0c978'; x.fillRect(0, HZ + 28, W, H - HZ - 28);
-    for (let py = HZ + 28; py < H; py += 2) {
-      for (let px = 0; px < W; px += 2) {
-        if (((px * 3 + py * 5) % 11) === 0) { x.fillStyle = '#dcae5a'; x.fillRect(px, py, 2, 1); }
+    [60, 156, 252].forEach(function (ax) {
+      for (let i = 0; i < 11; i++) {
+        const yT = 40 + 12 * i;
+        x.fillStyle = '#383266'; x.fillRect(ax, yT, 8, 12);
+        x.fillStyle = '#5a5498'; x.fillRect(ax, yT + 8, 8, 2);
+        x.fillStyle = '#2f2a5e'; x.fillRect(ax, yT + 10, 8, 2);
       }
-    }
-    x.fillStyle = '#c99a4e'; x.fillRect(0, HZ + 28, W, 1);
-    palm(x, 22, DECK + 6);
-    palm(x, 298, DECK + 6);
+      x.fillStyle = '#6a64b8'; x.fillRect(ax, 40, 1, 124); x.fillRect(ax + 7, 40, 1, 124);
+    });
+    // wall in front of the lowest tier
+    x.fillStyle = '#35306a'; x.fillRect(0, 164, W, 8);
+    x.fillStyle = COL.hot; x.fillRect(0, 164, W, 1);
+    x.fillStyle = '#4a4690'; x.fillRect(0, 165, W, 1);
+    // everything from here on is the ramp, drawn on its own layer so the crowd can sit between
+    bgF = bgF || mk(W, H);
+    x = bgF.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.clearRect(0, 0, W, H);
 
+    // ---- a standalone ramp: it stands on the boardwalk with its frame showing, not cut into the ground ----
+    const LX = C.CX - (C.F + C.R), RX = C.CX + (C.F + C.R);   // the two lips
+    const GY = 190;                                             // ground the structure stands on
+    const DL = 26, DR = W - 26;                                 // outer ends of the platforms
+    const FR = '#4b4272', FR2 = '#6a5f9c', PLY = '#8f8bb8', PLY_HI = '#d7d3ea';
+    function ln(x0, y0, x1, y1, w, col) {
+      const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)));
+      x.fillStyle = col;
+      for (let i = 0; i <= n; i++) { const f = n ? i / n : 0; x.fillRect(Math.round(x0 + (x1 - x0) * f), Math.round(y0 + (y1 - y0) * f), w, w); }
+    }
+    function hAt(dx) {
+      dx = Math.abs(dx);
+      if (dx <= C.F) return 0;
+      return C.R * (1 - Math.cos(Math.asin(Math.min(1, (dx - C.F) / C.R))));
+    }
+    // grey arena floor the ramp is standing on, with its shadow
+    const GB = 172;                                             // far ground line, behind the ramp
+    const fl = x.createLinearGradient(0, GB, 0, H);
+    fl.addColorStop(0, '#6f6c8c'); fl.addColorStop(1, '#8d8aa8');
+    x.fillStyle = fl; x.fillRect(0, GB, W, H - GB);
+    x.fillStyle = '#a9a6c2'; x.fillRect(0, GB, W, 1);
+    x.fillStyle = 'rgba(40,36,80,0.28)';
+    [177, 183, 190, 198].forEach(function (py) { x.fillRect(0, py, W, 1); });   // floor seams, spaced wider toward the viewer
+    for (let px = -40; px < W + 40; px += 48) ln(C.CX + (px - C.CX) * 0.9, GB + 1, px, H - 1, 1, 'rgba(40,36,80,0.2)');
+    x.fillStyle = 'rgba(18,13,46,0.3)'; x.fillRect(DL - 4, GB + 1, DR - DL + 8, H - GB);
+
+    // back side of the frame (the ocean side): smaller and darker because it is further away
+    {
+      const BK = 0.92, BD = 20, BYy = (C.FLOOR - BD) - (C.FLOOR - DECK) * BK;
+      const bxx = function (px) { return Math.round(C.CX + (px - C.CX) * BK); };
+      const B1 = '#3a3360', B2 = '#524a85';
+      for (let px = LX + 8; px <= RX - 8; px += 16) {
+        const top = Math.round((C.FLOOR - BD) - hAt(px - C.CX) * BK + 3);
+        x.fillStyle = B1; x.fillRect(bxx(px), top, 2, GB - top);
+      }
+      x.fillStyle = B1; x.fillRect(bxx(LX - 6), GB - 6, bxx(RX + 6) - bxx(LX - 6), 2);
+      [[DL, LX, 1], [RX, DR, -1]].forEach(function (d) {
+        const x0 = d[0], x1 = d[1], dirn = d[2];
+        const lA = bxx(dirn > 0 ? x0 + 4 : x1 - 7), lB = bxx(dirn > 0 ? x1 - 12 : x0 + 9);
+        [lA, lB].forEach(function (px) { x.fillStyle = B1; x.fillRect(px, Math.round(BYy) + 6, 2, GB - Math.round(BYy) - 6); x.fillStyle = B2; x.fillRect(px, Math.round(BYy) + 6, 1, GB - Math.round(BYy) - 6); });
+        const ya = Math.round(BYy) + 12, yb = GB - 8;
+        ln(lA + 2, ya, lB, yb, 1, B2); ln(lB, ya, lA + 2, yb, 1, B2);
+        x.fillStyle = B1; x.fillRect(Math.min(lA, lB), Math.round((BYy + GB) / 2), Math.abs(lB - lA) + 2, 2);
+      });
+    }
+
+    // frame under the transition: posts and a cross beam
+    for (let px = LX + 8; px <= RX - 8; px += 16) {
+      const top = C.FLOOR - hAt(px - C.CX) + 3;
+      x.fillStyle = FR; x.fillRect(px, Math.round(top), 3, GY - Math.round(top));
+      x.fillStyle = FR2; x.fillRect(px, Math.round(top), 1, GY - Math.round(top));
+    }
+    x.fillStyle = FR; x.fillRect(LX - 6, GY - 7, RX - LX + 12, 3);
+    x.fillStyle = FR2; x.fillRect(LX - 6, GY - 7, RX - LX + 12, 1);
+
+    // seen from slightly above, like the arcade original: the far rim sits higher and a little narrower
+    const DEPTH = 20, K = 0.92;
     const pts = [];
-    for (let s = -C.S_TOP; s <= C.S_TOP + 0.01; s += 1.5) {
-      const f = Game.surf(s);
+    for (let sA = -C.S_TOP; sA <= C.S_TOP + 0.01; sA += 1.5) {
+      const f = Game.surf(sA);
       pts.push([C.CX + f.x, C.FLOOR - f.h]);
     }
-    function trace() {
-      x.beginPath(); x.moveTo(0, DECK);
-      pts.forEach(function (p) { x.lineTo(p[0], p[1]); });
-      x.lineTo(W, DECK); x.lineTo(W, H); x.lineTo(0, H); x.closePath();
-    }
-    trace(); x.fillStyle = COL.wood; x.fill();
-    x.save(); trace(); x.clip();
-    ['#a86526', '#945620', '#80481a', '#6a3a15'].forEach(function (c, i) {
-      x.save(); x.translate(0, 7 * (i + 1));
-      x.beginPath(); x.moveTo(0, DECK);
-      pts.forEach(function (p) { x.lineTo(p[0], p[1]); });
-      x.lineTo(W, DECK);
-      x.strokeStyle = c; x.lineWidth = 2; x.stroke(); x.restore();
+    const bpts = pts.map(function (p) { return [C.CX + (p[0] - C.CX) * K, (C.FLOOR - DEPTH) - (C.FLOOR - p[1]) * K]; });
+    const BY = bpts[0][1];                                // far rim height
+    const bx = function (px) { return C.CX + (px - C.CX) * K; };
+    function curveOf(arr) { x.beginPath(); arr.forEach(function (p, i) { if (i) x.lineTo(p[0], p[1]); else x.moveTo(p[0], p[1]); }); }
+
+    // platforms at each end: top surface in perspective, slab edge, legs, braces, back rail
+    [[DL, LX, 1], [RX, DR, -1]].forEach(function (d) {
+      const x0 = d[0], x1 = d[1], dirn = d[2];
+      const lA = dirn > 0 ? x0 + 4 : x1 - 7, lB = dirn > 0 ? x1 - 12 : x0 + 9;
+      [lA, lB].forEach(function (px) { x.fillStyle = FR; x.fillRect(px, DECK + 6, 3, GY - DECK - 6); x.fillStyle = FR2; x.fillRect(px, DECK + 6, 1, GY - DECK - 6); });
+      const ya = DECK + 12, yb = GY - 8;
+      ln(lA + 3, ya, lB, yb, 2, FR2); ln(lB, ya, lA + 3, yb, 2, FR2);
+      x.fillStyle = FR; x.fillRect(Math.min(lA, lB), Math.round((DECK + GY) / 2), Math.abs(lB - lA) + 3, 2);
+      // top surface
+      const tg = x.createLinearGradient(0, BY, 0, DECK);
+      tg.addColorStop(0, '#f0ecfa'); tg.addColorStop(1, '#c9c4e2');
+      x.beginPath(); x.moveTo(x0, DECK); x.lineTo(x1, DECK); x.lineTo(bx(x1), BY); x.lineTo(bx(x0), BY); x.closePath();
+      x.fillStyle = tg; x.fill();
+      x.fillStyle = '#aaa5cf';
+      for (let px = x0 + (dirn > 0 ? 8 : 6); px < x1 - 2; px += 12) ln(px, DECK - 1, bx(px), BY + 1, 1, '#aaa5cf');
+      x.fillStyle = PLY; x.fillRect(x0, DECK, x1 - x0, 6);
+      x.fillStyle = FR; x.fillRect(x0, DECK + 6, x1 - x0, 1);
+      x.fillStyle = PLY_HI; x.fillRect(x0, DECK, x1 - x0, 1);
+      x.fillStyle = '#b3aed0';
+      for (let px = x0 + 6; px < x1 - 2; px += 10) x.fillRect(px, DECK + 2, 1, 4);
+      // rail along the far edge, and a post at the outer front corner
+      const r0 = Math.min(bx(x0), bx(x1)), r1 = Math.max(bx(x0), bx(x1));
+      x.fillStyle = '#e9e5f7'; x.fillRect(Math.round(r0), BY - 12, Math.round(r1 - r0), 2);
+      x.fillStyle = '#9a95c4'; x.fillRect(Math.round(r0), BY - 6, Math.round(r1 - r0), 1);
+      for (let px = r0; px <= r1 - 1; px += 12) { x.fillStyle = '#e9e5f7'; x.fillRect(Math.round(px), BY - 12, 2, 12); x.fillStyle = '#9a95c4'; x.fillRect(Math.round(px) + 1, BY - 12, 1, 12); }
+      const ox = dirn > 0 ? x0 : x1 - 2, obx = dirn > 0 ? bx(x0) : bx(x1) - 2;
+      ln(ox + 1, DECK - 12, obx + 1, BY - 12, 1, '#e9e5f7');
+      x.fillStyle = '#e9e5f7'; x.fillRect(ox, DECK - 12, 2, 12);
     });
-    x.fillStyle = '#945620';
-    for (let px = 4; px < W; px += 16) {
-      if (px < C.CX - 80 || px > C.CX + 80) x.fillRect(px, DECK + 4, 1, H);
+
+    // the ramp: plywood shell under the near edge, then the sloping surface running back to the far rim
+    x.lineJoin = 'round';
+    curveOf(pts); x.strokeStyle = FR; x.lineWidth = 11; x.stroke();
+    curveOf(pts); x.strokeStyle = PLY; x.lineWidth = 9; x.stroke();
+    x.beginPath(); x.moveTo(pts[0][0], pts[0][1]);
+    pts.forEach(function (p) { x.lineTo(p[0], p[1]); });
+    for (let i = bpts.length - 1; i >= 0; i--) x.lineTo(bpts[i][0], bpts[i][1]);
+    x.closePath();
+    const wg = x.createLinearGradient(0, BY, 0, C.FLOOR);
+    wg.addColorStop(0, '#9a94c4'); wg.addColorStop(0.5, '#c4bde0'); wg.addColorStop(1, '#a29cc9');
+    x.fillStyle = wg; x.fill();
+    // plywood sheet lines running front to back across the surface
+    x.lineWidth = 1;
+    [0.25, 0.5, 0.75].forEach(function (f) {
+      curveOf(pts.map(function (p, i) { return [p[0] + (bpts[i][0] - p[0]) * f, p[1] + (bpts[i][1] - p[1]) * f]; }));
+      x.strokeStyle = 'rgba(60,54,110,0.22)'; x.stroke();
+    });
+    for (let i = 4; i < pts.length - 4; i += 9) {
+      x.beginPath(); x.moveTo(pts[i][0], pts[i][1]); x.lineTo(bpts[i][0], bpts[i][1]);
+      x.strokeStyle = 'rgba(60,54,110,0.16)'; x.stroke();
     }
-    x.fillStyle = '#4a2a10'; x.fillRect(0, C.FLOOR + 6, W, H);
-    x.restore();
-    x.beginPath();
-    pts.forEach(function (p, i) { if (i) x.lineTo(p[0], p[1]); else x.moveTo(p[0], p[1]); });
-    x.strokeStyle = '#ffe9b8'; x.lineWidth = 2; x.stroke();
-    x.fillStyle = '#f6c26b'; x.fillRect(0, DECK, C.CX - 80, 2); x.fillRect(C.CX + 80, DECK, 80, 2);
-    x.fillStyle = '#d8dde6'; x.fillRect(C.CX - 84, DECK - 1, 7, 3); x.fillRect(C.CX + 77, DECK - 1, 7, 3);
-    x.font = '8px ' + FONT; x.textBaseline = 'top'; x.textAlign = 'center';
-    function paint(str, px, py) { x.fillStyle = '#4a2a10'; x.fillText(str, px + 1, py + 1); x.fillStyle = '#ffffff'; x.fillText(str, px, py); }
-    paint('SUNSET', 40, 140); paint('PARK', 40, 152);
-    paint('LOCALS', 280, 140); paint('ONLY', 280, 152);
-    x.fillStyle = COL.hot; x.fillRect(12, 166, 56, 3); x.fillRect(252, 166, 56, 3);
+    // far rim, with the banners standing along the back of the floor
+    curveOf(bpts); x.strokeStyle = '#f4efff'; x.lineWidth = 2; x.stroke();
+    // near riding edge and the copings
+    curveOf(pts); x.strokeStyle = '#f4efff'; x.lineWidth = 2; x.stroke();
+    x.fillStyle = '#e4e1f2'; x.fillRect(LX - 4, DECK - 2, 8, 4); x.fillRect(RX - 4, DECK - 2, 8, 4);
+    x.fillStyle = '#ffffff'; x.fillRect(LX - 4, DECK - 2, 8, 1); x.fillRect(RX - 4, DECK - 2, 8, 1);
+    x.fillStyle = '#9a95c4'; x.fillRect(LX - 4, DECK + 1, 8, 1); x.fillRect(RX - 4, DECK + 1, 8, 1);
+    x.fillStyle = '#e4e1f2'; x.fillRect(Math.round(bpts[0][0]) - 3, BY - 1, 6, 3); x.fillRect(Math.round(bpts[bpts.length - 1][0]) - 3, BY - 1, 6, 3);
+  }
+
+  /* ---------- the crowd ---------- */
+  // [x, tier, move, shirt, skin, hair, phase]; move 0 sits, 1 waves right, 2 pumps both arms, 3 waves left
+  const SHIRTS = ['#ff2f8e', '#2ee6c8', '#ffd34d', '#ffffff', '#ff9f43', '#9a86ff'];
+  const SKINS = ['#ffbf8a', '#e0a070', '#a8683a', '#6e4226'];
+  const HAIRS = ['#3a1d0c', '#14121c', '#d8a040', '#8a3a1a'];
+  const PEOPLE = [
+    [30, 0, 1, 0, 0, 0, 0.0], [118, 0, 2, 1, 2, 1, 1.3], [228, 0, 0, 2, 1, 2, 2.1],
+    [176, 1, 3, 3, 3, 1, 0.7], [270, 1, 2, 4, 0, 3, 2.9],
+    [12, 2, 2, 5, 1, 0, 1.8], [132, 2, 1, 0, 2, 1, 0.4], [298, 2, 1, 1, 0, 2, 2.5],
+    [44, 3, 3, 2, 3, 3, 1.1], [100, 3, 0, 4, 1, 0, 0.2], [192, 3, 2, 3, 0, 1, 3.0],
+    [240, 4, 1, 5, 2, 2, 1.6],
+    [110, 5, 2, 0, 1, 3, 2.2], [10, 5, 1, 2, 3, 0, 0.9],
+    [306, 6, 1, 1, 0, 1, 1.4],
+    [50, 7, 0, 4, 2, 2, 0.5],
+    [12, 8, 3, 3, 1, 0, 2.7], [300, 8, 2, 0, 3, 3, 0.1]
+  ];
+  function drawCrowd(ctx, dt) {
+    crowdT += dt;
+    if (excite > 0) excite -= dt;
+    const R = function (px, py, w, h, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(px), Math.round(py), w, h); };
+    PEOPLE.forEach(function (p) {
+      const ox = p[0], oy = 40 + 12 * p[1] + 9, ph = p[6];
+      const shirt = SHIRTS[p[3]], skin = SKINS[p[4]], hair = HAIRS[p[5]];
+      const move = excite > 0 ? 2 : p[2];
+      const beat = Math.sin(crowdT * (excite > 0 ? 12 : 9) + ph) > 0;
+      const bob = (move === 2 && !beat) ? 1 : 0;
+      if (move === 0) {
+        R(ox, oy - 5, 1, 4, shirt); R(ox + 7, oy - 5, 1, 4, shirt);
+      } else if (move === 1 || move === 3) {
+        const sw = Math.round(Math.sin(crowdT * 10 + ph) * 2);
+        const ax = move === 1 ? ox + 6 : ox - 1;
+        R(ax, oy - 9, 2, 4, skin); R(ax + sw, oy - 14, 2, 5, skin);
+        R(move === 1 ? ox : ox + 7, oy - 5, 1, 4, shirt);
+      } else {
+        const hi = excite > 0 ? true : beat;
+        R(ox - 1, hi ? oy - 14 + bob : oy - 9, 2, hi ? 9 : 4, skin);
+        R(ox + 7, (excite > 0 || !beat) ? oy - 14 + bob : oy - 9, 2, (excite > 0 || !beat) ? 9 : 4, skin);
+      }
+      R(ox + 1, oy - 6 + bob, 6, 6 - bob, shirt);
+      R(ox + 2, oy - 10 + bob, 4, 4, skin);
+      R(ox + 2, oy - 12 + bob, 4, 2, hair);
+    });
   }
 
   /* ---------- text helpers ---------- */
@@ -775,9 +934,13 @@ const Render = (function () {
   }
   function onEvents(list) {
     list.forEach(function (e) {
-      if (e.type === 'launch' || e.type === 'plantStart' || e.type === 'kickStart') {
+      if (e.type === 'dropin') {
+        burst(e.x, e.y, 8, ['#ffffff', COL.sun, COL.teal], 36, 8);
+        floats = [{ text: 'DROP IN!', sub: '', x: 160, y: 30, life: 1.3, color: COL.sun }];
+      } else if (e.type === 'launch' || e.type === 'plantStart' || e.type === 'kickStart') {
         burst(e.x, e.y, 6, ['#ffffff', COL.sun], 30, 6);
       } else if (e.type === 'land') {
+        if (e.clean && e.total > 0) excite = Math.max(excite, e.total > 1000 ? 2.6 : 1.6);   // the crowd goes up for clean tricks
         if (e.bail) {
           burst(e.x, e.y, 16, [COL.red, COL.orange, '#ffffff'], 70, 25);
           shake = 0.35;
@@ -795,17 +958,51 @@ const Render = (function () {
   }
 
   /* ---------- skater ---------- */
+  // Drop-in stance on the left coping: tail on the edge, back foot right on it,
+  // nearly the whole board hanging out over the ramp, nose pointing down.
+  function drawDropIn(ctx, t) {
+    const D = DECK, LX = C.CX - (C.F + C.R);   // the lip
+    const R = function (x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(x), Math.round(y), w, h); };
+    const limb = function (x0, y0, x1, y1, w, col) {
+      const n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)));
+      for (let i = 0; i <= n; i++) { const f = n ? i / n : 0; R(x0 + (x1 - x0) * f - w / 2, y0 + (y1 - y0) * f - w / 2, w, w, col); }
+    };
+    // board level with the flat bottom: tail end on the coping, the rest out over the ramp
+    const tx = LX - 2, ty = D - 2;
+    ctx.drawImage(spr.board[0], tx, ty - 4);
+    const fb = [tx + 4, ty], ff = [tx + 15, ty];   // back foot on the edge, front foot out over the ramp
+    const sway = Math.sin(t * 2.4) > 0.3 ? 1 : 0;   // a tiny idle bob
+    const hip = [LX + 6, D - 17 - sway], sh = [LX + 9, D - 27 - sway];
+    // knees bent, weight forward
+    limb(fb[0], fb[1] - 2, LX + 3, D - 11, 3, COL.pants);
+    limb(LX + 3, D - 11, hip[0], hip[1], 3, COL.pants);
+    limb(ff[0], ff[1] - 2, LX + 12, D - 10, 3, COL.pants);
+    limb(LX + 12, D - 10, hip[0] + 1, hip[1], 3, COL.pants);
+    R(fb[0] - 3, fb[1] - 2, 5, 2, COL.shoe);
+    R(ff[0] - 2, ff[1] - 2, 5, 2, COL.shoe);
+    // torso leaning into the drop, arms out for balance
+    limb(hip[0], hip[1], sh[0], sh[1], 5, COL.shirt);
+    limb(sh[0], sh[1] + 1, LX + 19, D - 23 + sway, 2, COL.skin);
+    limb(sh[0] - 2, sh[1] + 1, LX + 1, D - 30, 2, COL.skin);
+    // head
+    R(sh[0] - 1, sh[1] - 7, 6, 5, COL.skin);
+    R(sh[0] - 1, sh[1] - 8, 6, 2, COL.hair);
+    R(sh[0] - 1, sh[1] - 5, 6, 1, COL.band);
+    R(sh[0] + 3, sh[1] - 4, 1, 1, '#000');
+  }
+
   function drawSkater(ctx) {
     const S = Game.S;
     let px, py, tilt = 0, sx = 1, pose = 'ride', bailRot = 0, plantE = -1, boardOff = 0, boardFrame = 0;
+    if (S.mode === 'ready' && S.ready) { drawDropIn(ctx, S.ready.t); return; }
     if (S.mode === 'air' && S.air) {
       const a = S.air, side = a.side;
       px = C.CX + side * (C.F + C.R); py = C.FLOOR - a.h;
-      const up = Math.max(0, 1 - a.t / 0.28);
-      const dn = a.vh < 0 ? Math.max(0, 1 - (a.h - C.LIP_H) / 20) : 0;
-      tilt = -side * (Math.PI / 2) * Math.max(up, dn);
+      // leave the lip at the wall's angle, then settle into the held aerial angle
+      tilt = -side * (Math.PI / 2 + (AIR_TILT - Math.PI / 2) * Math.min(1, a.t / 0.2));
       sx = Math.cos(a.spin) * a.face0;
       pose = (a.kicking && a.kick < 0.3) ? 'crouch' : 'ride';
+      if (a.grab > 0.5) { pose = 'grab'; boardOff = 2 * a.grab; }
       if (a.kicking) { boardOff = Math.sin(a.kick * Math.PI) * 4; boardFrame = Math.floor(a.kick * 4) % 4; }
     } else if (S.mode === 'plant' && S.plant) {
       const P = S.plant, side = P.side;
@@ -862,8 +1059,9 @@ const Render = (function () {
       if (rate < -2) return 'HOLD DOWN TO PUMP';
       return '';
     }
-    if (S.mode === 'air' && S.airs < 2) return 'LEFT/RIGHT TURN  ' + bLabel() + ' KICKFLIP';
+    if (S.mode === 'air' && S.airs < 2) return 'TURN  ' + bLabel() + ' KICKFLIP  ' + aLabel() + ' GRAB';
     if (S.mode === 'plant') return 'HOLD ' + aLabel() + ' TO STAY UP';
+    if (S.mode === 'ready') return S.ready && S.ready.t > 5 && Math.floor(S.ready.t * 2.5) % 2 === 0 ? 'PRESS DOWN TO DROP IN' : '';
     return '';
   }
   function drawHud(ctx) {
@@ -899,17 +1097,99 @@ const Render = (function () {
     if (S.state === 'play' && S.timeUp && S.mode !== 'ride') outlined(ctx, 'TIME! FINISH THE TRICK', 160, 166, COL.sun, 8);
   }
   function drawTitle(ctx, best) {
-    panel(ctx, 36, 36, 248, 128);
-    text(ctx, 'HALF PIPE', 160, 46, COL.sun, 'center', 16);
-    text(ctx, 'SUNSET SESSION', 160, 68, COL.hot, 'center');
-    text(ctx, 'UP/DOWN: PUMP THE RAMP', 160, 80, COL.ink, 'center');
-    text(ctx, aLabel() + ': HOLD AT LIP, HANDPLANT', 160, 90, COL.ink, 'center');
-    text(ctx, 'LEFT/RIGHT AT LIP: KICK TURN', 160, 100, COL.ink, 'center');
-    text(ctx, 'IN AIR: LEFT/RIGHT TURN', 160, 110, COL.ink, 'center');
-    text(ctx, 'IN AIR: ' + bLabel() + ' KICKFLIP', 160, 120, COL.ink, 'center');
-    text(ctx, 'LAND CLEAN TO KEEP COMBO', 160, 131, COL.teal, 'center');
-    if (Math.floor(performance.now() / 450) % 2 === 0) text(ctx, padMode ? 'PRESS START' : 'PRESS SPACE OR TAP', 160, 142, COL.sun, 'center');
-    text(ctx, 'HIGH SCORE ' + pad(best, 6), 160, 153, COL.dim, 'center');
+    panel(ctx, 36, 28, 248, 154);
+    text(ctx, 'HALF PIPE', 160, 38, COL.sun, 'center', 16);
+    text(ctx, 'SUNSET SESSION', 160, 60, COL.hot, 'center');
+    text(ctx, 'UP/DOWN: PUMP THE RAMP', 160, 72, COL.ink, 'center');
+    text(ctx, aLabel() + ': HOLD AT LIP, HANDPLANT', 160, 82, COL.ink, 'center');
+    text(ctx, 'LEFT/RIGHT AT LIP: KICK TURN', 160, 92, COL.ink, 'center');
+    text(ctx, 'IN AIR: LEFT/RIGHT TURN', 160, 102, COL.ink, 'center');
+    text(ctx, 'IN AIR: ' + bLabel() + ' KICKFLIP', 160, 112, COL.ink, 'center');
+    text(ctx, 'IN AIR: ' + aLabel() + ' GRAB THE BOARD', 160, 122, COL.ink, 'center');
+    text(ctx, 'LAND CLEAN TO KEEP COMBO', 160, 134, COL.teal, 'center');
+    if (Math.floor(performance.now() / 450) % 2 === 0) text(ctx, padMode ? 'PRESS START' : 'PRESS SPACE OR TAP', 160, 146, COL.sun, 'center');
+    text(ctx, 'HIGH SCORE ' + pad(best, 6), 160, 158, COL.dim, 'center');
+    text(ctx, bLabel() + ': HOW TO PLAY', 160, 169, COL.teal, 'center');
+    text(ctx, VERSION, W - 5, H - 10, COL.dim, 'right');
+  }
+
+  /* ---------- how to play: pictures first, a few words each ---------- */
+  function dpadIcon(ctx, cx, cy, lit) {
+    const R = function (px, py, w, h, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(px), Math.round(py), w, h); };
+    R(cx - 8, cy - 3, 17, 7, '#5a54a0'); R(cx - 3, cy - 8, 7, 17, '#5a54a0');
+    const on = COL.sun;
+    if (lit.l) R(cx - 8, cy - 3, 6, 7, on);
+    if (lit.r) R(cx + 3, cy - 3, 6, 7, on);
+    if (lit.u) R(cx - 3, cy - 8, 7, 6, on);
+    if (lit.d) R(cx - 3, cy + 3, 7, 6, on);
+    R(cx - 1, cy - 1, 3, 3, '#120d2e');
+  }
+  function buttonIcon(ctx, cx, cy, letter) {
+    const R = function (px, py, w, h, col) { ctx.fillStyle = col; ctx.fillRect(Math.round(px), Math.round(py), w, h); };
+    R(cx - 6, cy - 5, 13, 11, COL.hot); R(cx - 5, cy - 6, 11, 13, COL.hot);
+    R(cx - 5, cy - 5, 11, 2, '#ff7ab8');
+    ctx.font = '8px ' + FONT; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff'; ctx.fillText(letter, cx + 1, cy - 3);
+  }
+  function miniSkater(ctx, img, cx, by, flip) {
+    // half-size copy of a body sprite, feet at by
+    ctx.save(); ctx.translate(Math.round(cx), Math.round(by));
+    ctx.scale(flip, 1);
+    ctx.drawImage(img, 0, 0, 24, 32, -6, -14, 12, 16);
+    ctx.restore();
+  }
+  function miniBoard(ctx, img, cx, by) { ctx.drawImage(img, 0, 0, 20, 8, Math.round(cx) - 7, Math.round(by) - 4, 14, 6); }
+  function drawHowTo(ctx) {
+    const t = performance.now() / 1000;
+    const alt = Math.floor(t * 2) % 2 === 0;
+    ctx.fillStyle = '#120d2e'; ctx.fillRect(4, 5, 312, 190);   // solid, so the scene behind doesn't compete with the pictures
+    panel(ctx, 4, 5, 312, 190);
+    text(ctx, 'HOW TO PLAY', 160, 10, COL.sun, 'center');
+    text(ctx, 'PRESS DOWN TO DROP IN', 160, 21, COL.dim, 'center');
+    const cells = [
+      { h: 'PUMP', l: ['UP: CLIMBING', 'DOWN: DROPPING'] },
+      { h: 'HANDPLANT', l: ['HOLD ' + aLabel() + ' AT', 'THE LIP'] },
+      { h: 'KICK TURN', l: ['HOLD LEFT OR', 'RIGHT AT LIP'] },
+      { h: 'SPIN', l: ['LEFT OR RIGHT', 'IN THE AIR'] },
+      { h: 'KICKFLIP', l: [bLabel() + ' IN THE AIR', 'UP TO THREE'] },
+      { h: 'GRAB', l: ['HOLD ' + aLabel() + ' IN AIR', 'LET GO TO LAND'] }
+    ];
+    cells.forEach(function (c, i) {
+      const cx0 = 8 + (i % 3) * 102, cy0 = 32 + Math.floor(i / 3) * 76;
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(cx0, cy0, 98, 70);
+      const ix = cx0 + 28, iy = cy0 + 20, sx = cx0 + 70, sy = cy0 + 30;
+      if (i === 0) {
+        dpadIcon(ctx, ix, iy, { u: alt, d: !alt });
+        miniSkater(ctx, spr.body[alt ? 'ride' : 'crouch'], sx, sy - (alt ? 0 : 1), 1);
+        miniBoard(ctx, spr.board[0], sx, sy + 1);
+      } else if (i === 1) {
+        buttonIcon(ctx, ix, iy, aLabel());
+        miniSkater(ctx, spr.body.plant, sx, sy - 6, 1);
+        miniBoard(ctx, spr.board[0], sx, sy - 3);
+      } else if (i === 2) {
+        dpadIcon(ctx, ix, iy, { l: alt, r: !alt });
+        miniSkater(ctx, spr.body.crouch, sx, sy, alt ? 1 : -1);
+        miniBoard(ctx, spr.board[0], sx, sy + 1);
+      } else if (i === 3) {
+        dpadIcon(ctx, ix, iy, { l: alt, r: !alt });
+        const f = Math.cos(t * 5); const fl = Math.abs(f) < 0.2 ? 0.2 : f;
+        miniSkater(ctx, spr.body.ride, sx, sy - 3, fl);
+        miniBoard(ctx, spr.board[0], sx, sy);
+      } else if (i === 4) {
+        buttonIcon(ctx, ix, iy, bLabel());
+        miniSkater(ctx, spr.body.ride, sx, sy - 5, 1);
+        miniBoard(ctx, spr.board[Math.floor(t * 8) % 4], sx, sy - 1 + (Math.floor(t * 8) % 4 === 0 ? 0 : 1));
+      } else {
+        buttonIcon(ctx, ix, iy, aLabel());
+        miniSkater(ctx, spr.body.grab, sx, sy - 4, 1);
+        miniBoard(ctx, spr.board[0], sx, sy - 2);
+      }
+      text(ctx, c.h, cx0 + 49, cy0 + 38, COL.sun, 'center');
+      text(ctx, c.l[0], cx0 + 49, cy0 + 49, COL.ink, 'center');
+      text(ctx, c.l[1], cx0 + 49, cy0 + 59, COL.ink, 'center');
+    });
+    text(ctx, 'COMBINE SPINS, FLIPS AND GRABS', 160, 184, COL.teal, 'center');
+    text(ctx, VERSION, W - 5, H - 10, COL.dim, 'right');
   }
   function drawOver(ctx, best, newBest) {
     const S = Game.S;
@@ -928,7 +1208,7 @@ const Render = (function () {
   }
 
   /* ---------- frame ---------- */
-  function draw(ctx, dt, best, newBest, paused) {
+  function draw(ctx, dt, best, newBest, paused, howto) {
     const S = Game.S;
     ctx.imageSmoothingEnabled = false;
     if (S.pumping === 1 && S.mode === 'ride') {
@@ -942,6 +1222,8 @@ const Render = (function () {
     ctx.save();
     if (shake > 0) { shake -= dt; ctx.translate(Math.round((Math.random() - 0.5) * 4), Math.round((Math.random() - 0.5) * 4)); }
     ctx.drawImage(bg, 0, 0);
+    drawCrowd(ctx, dt);
+    ctx.drawImage(bgF, 0, 0);
     drawSkater(ctx);
     parts = parts.filter(function (p) { return p.life > 0; });
     parts.forEach(function (p) {
@@ -951,12 +1233,13 @@ const Render = (function () {
     floats.forEach(function (f) { f.life -= dt; });
     ctx.restore();
     drawHud(ctx);
-    if (S.state === 'title') drawTitle(ctx, best);
+    if (S.state === 'title') { if (howto) drawHowTo(ctx); else drawTitle(ctx, best); }
     else if (S.state === 'over') drawOver(ctx, best, newBest);
     if (paused) {
       panel(ctx, 60, 70, 200, 60);
       text(ctx, 'PAUSED', 160, 82, COL.sun, 'center', 16);
       text(ctx, padMode ? 'START TO RESUME' : 'ENTER OR P TO RESUME', 160, 108, COL.ink, 'center');
+      text(ctx, VERSION, W - 5, H - 10, COL.dim, 'right');
     }
   }
 
@@ -965,14 +1248,96 @@ const Render = (function () {
   return { draw: draw, onEvents: onEvents, rebuild: buildBg, setPad: function (v) { padMode = !!v; } };
 })();
 /* ===== Sound, input and main loop ===== */
+/* ===== Music: skate punk, scheduled ahead of time on the audio clock ===== */
+// A major, 176 bpm, eight bars: A E F#m D, then F#m D A E. Distorted power chords chugging in eighths,
+// picked bass, a four-on-the-snare backbeat with a fill every eighth bar, and a short hook on top.
+function createMusic(ac, dest) {
+  const SP = 60 / 176 / 4;                       // one sixteenth note
+  const mtof = function (m) { return 440 * Math.pow(2, (m - 69) / 12); };
+  const ROOTS = [45, 52, 54, 50, 54, 50, 45, 52];   // A2 E3 F#3 D3 ...
+  const HOOK = [
+    76, 0, 0, 0, 76, 0, 78, 0, 81, 0, 0, 0, 0, 0, 0, 0,
+    76, 0, 0, 0, 76, 0, 73, 0, 76, 0, 0, 0, 0, 0, 0, 0,
+    78, 0, 0, 0, 78, 0, 81, 0, 78, 0, 0, 0, 76, 0, 73, 0,
+    74, 0, 0, 0, 74, 0, 78, 0, 81, 0, 78, 0, 74, 0, 0, 0,
+    81, 0, 0, 0, 81, 0, 78, 0, 76, 0, 0, 0, 73, 0, 0, 0,
+    78, 0, 0, 0, 78, 0, 74, 0, 78, 0, 0, 0, 81, 0, 78, 0,
+    76, 0, 0, 0, 73, 0, 76, 0, 81, 0, 0, 0, 76, 0, 73, 0,
+    76, 0, 73, 0, 76, 0, 80, 0, 81, 0, 0, 0, 0, 0, 0, 0
+  ];
+  const nb = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  const nd = nb.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+
+  // guitar amp: saw waves into a hard clipper, then a low-pass to take the fizz off
+  const gtr = ac.createGain(), clip = ac.createWaveShaper(), amp = ac.createBiquadFilter(), out = ac.createGain();
+  const curve = new Float32Array(1024);
+  for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(((i / 511.5) - 1) * 7);
+  clip.curve = curve;
+  amp.type = 'lowpass'; amp.frequency.value = 3200;
+  out.gain.value = 0.085;
+  gtr.connect(clip); clip.connect(amp); amp.connect(out); out.connect(dest);
+
+  function osc(type, f, t, dur, vol, f2, to) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(to || dest);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function noise(t, dur, vol, type, freq) {
+    const src = ac.createBufferSource(), g = ac.createGain(), f = ac.createBiquadFilter();
+    src.buffer = nb;
+    f.type = type; f.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(dest);
+    src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.02);
+  }
+  function power(root, t, dur, vol) {            // root, fifth and octave
+    [0, 7, 12].forEach(function (iv) { osc('sawtooth', mtof(root + iv), t, dur, vol, 0, gtr); });
+  }
+  function step(n, t) {
+    const bar = Math.floor(n / 16) % 8, st = n % 16, root = ROOTS[bar];
+    const fill = bar === 7 && st >= 12;
+    // drums
+    if (st === 0 || st === 6 || st === 8 || st === 10) osc('sine', 165, t, 0.12, 0.14, 45);
+    if (st === 4 || st === 12 || fill) { noise(t, 0.1, fill ? 0.06 : 0.08, 'bandpass', 2200); osc('triangle', 200, t, 0.07, 0.045, 120); }
+    if (st % 2 === 0) noise(t, 0.035, st % 4 === 2 ? 0.032 : 0.02, 'highpass', 8000);
+    if (st === 0 && (bar === 0 || bar === 4)) noise(t, 0.7, bar === 0 ? 0.06 : 0.04, 'highpass', 5000);
+    // chugging power chords, accents on the downbeats, palm muted in between
+    if (st % 2 === 0) {
+      const accent = st === 0 || st === 8;
+      power(root, t, accent ? SP * 3.2 : SP * 1.5, accent ? 0.34 : 0.26);
+      osc('triangle', mtof(root - 12), t, SP * 1.8, 0.09);   // bass doubling the root
+    }
+    // the hook
+    const m = HOOK[n % 128];
+    if (m) osc('square', mtof(m), t, SP * 2.6, 0.026);
+  }
+  let next = 0, n = 0;
+  return {
+    resync: function (t) { next = t; },
+    run: function (until) { while (next < until) { step(n, next); next += SP; n++; } }
+  };
+}
+
 const Sound = (function () {
-  let ac = null, muted = false;
+  const SKEY = 'sunset-half-pipe-sound';
+  const LABELS = ['SOUND ON', 'FX ONLY', 'SOUND OFF'];
+  let ac = null, mode = 0;            // 0 music and effects, 1 effects only, 2 silent
+  let music = null, bus = null, timer = null, running = false, wantMusic = false;
+  try { const m = parseInt(localStorage.getItem(SKEY) || '0', 10); if (m >= 0 && m <= 2) mode = m; } catch (e) {}
   function unlock() {
     if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = null; } }
     if (ac && ac.state === 'suspended') { ac.resume().catch(function () {}); }
   }
   function tone(f0, f1, dur, type, vol, delay) {
-    if (!ac || muted) return;
+    if (!ac || mode === 2) return;
     const t = ac.currentTime + (delay || 0);
     const o = ac.createOscillator(), g = ac.createGain();
     o.type = type || 'square';
@@ -983,11 +1348,32 @@ const Sound = (function () {
     o.connect(g); g.connect(ac.destination);
     o.start(t); o.stop(t + dur + 0.02);
   }
+  function tick() { if (music && ac) music.run(ac.currentTime + 0.25); }
+  // called every frame with whether a run is in progress and not paused
+  function setMusic(on) {
+    wantMusic = on;
+    const go = on && mode === 0 && ac && ac.state === 'running';
+    if (go && !running) {
+      if (!music) { bus = ac.createGain(); bus.gain.value = 0.0001; bus.connect(ac.destination); music = createMusic(ac, bus); }
+      music.resync(ac.currentTime + 0.05);
+      bus.gain.cancelScheduledValues(ac.currentTime);
+      bus.gain.setTargetAtTime(1.2, ac.currentTime, 0.05);
+      timer = setInterval(tick, 40);
+      running = true;
+    } else if (!go && running) {
+      clearInterval(timer); timer = null;
+      bus.gain.cancelScheduledValues(ac.currentTime);
+      bus.gain.setTargetAtTime(0.0001, ac.currentTime, 0.06);
+      running = false;
+    }
+  }
   function play(e) {
     if (e.type === 'pumpTick') tone(380, 560, 0.06, 'square', 0.025);
+    else if (e.type === 'dropin') tone(220, 460, 0.2, 'triangle', 0.07);
     else if (e.type === 'launch') tone(260, 700, 0.22, 'triangle', 0.08);
     else if (e.type === 'plantStart') tone(300, 620, 0.16, 'triangle', 0.07);
     else if (e.type === 'kickStart') tone(520, 340, 0.12, 'square', 0.05);
+    else if (e.type === 'grab') tone(300, 200, 0.07, 'square', 0.04);
     else if (e.type === 'flip') tone(400, 900, 0.18, 'square', 0.04);
     else if (e.type === 'land') {
       if (e.bail) { tone(220, 40, 0.45, 'sawtooth', 0.09); }
@@ -1000,8 +1386,14 @@ const Sound = (function () {
     else if (e.type === 'timeup') { tone(880, 880, 0.12, 'square', 0.06); tone(880, 880, 0.12, 'square', 0.06, 0.18); tone(1320, 1320, 0.3, 'square', 0.06, 0.36); }
   }
   return {
-    unlock: unlock, play: play,
-    toggle: function () { muted = !muted; return muted; }
+    unlock: unlock, play: play, music: setMusic,
+    label: function () { return LABELS[mode]; },
+    cycle: function () {
+      mode = (mode + 1) % 3;
+      try { localStorage.setItem(SKEY, String(mode)); } catch (e) {}
+      setMusic(wantMusic);
+      return LABELS[mode];
+    }
   };
 })();
 
@@ -1011,7 +1403,7 @@ const Sound = (function () {
   const ctx = cv.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   const KEY = 'sunset-half-pipe-best';
-  let best = 0, newBest = false, paused = false;
+  let best = 0, newBest = false, paused = false, howto = false;
   try { best = parseInt(localStorage.getItem(KEY) || '0', 10) || 0; } catch (e) { best = 0; }
   const bestEl = document.getElementById('best');
   function showBest() { bestEl.textContent = 'BEST ' + String(best).padStart(6, '0'); }
@@ -1059,7 +1451,7 @@ const Sound = (function () {
   setTimeout(fit, 120);
 
   /* ---------- actions ---------- */
-  // pad directions plus the A button, which is held for a handplant
+  // pad directions plus the A button: held at the lip for a handplant, held in the air for a grab
   const input = { left: false, right: false, up: false, down: false, a: false };
   const keymap = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down' };
 
@@ -1071,18 +1463,26 @@ const Sound = (function () {
     if (S.state === 'over') { if (S.t - S.overAt > 0.9) { newBest = false; Game.start(); } return true; }
     return false;
   }
-  function pressB() { if (!act()) Game.press('b'); }
-  function pressA() { act(); }
+  // on the title, B (or X) opens the how-to screen. Space still starts, and any button closes the how-to.
+  function pressB() {
+    if (howto) { howto = false; return; }
+    if (Game.S.state === 'title' && !paused) { howto = true; return; }
+    if (!act()) Game.press('b');
+  }
+  function pressSpace() { if (howto) { howto = false; return; } if (!act()) Game.press('b'); }
+  function pressA() { if (howto) { howto = false; return; } act(); }
   function togglePause() { if (Game.S.state === 'play') paused = !paused; }
-  function startPress() { if (Game.S.state === 'play') togglePause(); else act(); }
+  function startPress() { if (howto) { howto = false; return; } if (Game.S.state === 'play') togglePause(); else act(); }
 
   const muteBtn = document.getElementById('mute');
   function toggleMute() {
     Sound.unlock();
-    const m = Sound.toggle();
-    muteBtn.textContent = m ? 'SOUND OFF' : 'SOUND ON';
-    muteBtn.setAttribute('aria-pressed', m ? 'true' : 'false');
+    const m = Sound.cycle();
+    muteBtn.textContent = m;
+    muteBtn.setAttribute('aria-pressed', m === 'SOUND ON' ? 'false' : 'true');
   }
+  muteBtn.textContent = Sound.label();
+  muteBtn.setAttribute('aria-pressed', Sound.label() === 'SOUND ON' ? 'false' : 'true');
   muteBtn.addEventListener('click', toggleMute);
 
   /* ---------- keyboard ---------- */
@@ -1090,13 +1490,15 @@ const Sound = (function () {
     if (e.code === 'KeyM') { toggleMute(); return; }
     if (e.code === 'KeyP' || e.code === 'Escape') { if (!e.repeat) togglePause(); return; }
     const k = keymap[e.code];
-    const handled = k || e.code === 'KeyZ' || e.code === 'KeyX' || e.code === 'Space' || e.code === 'Enter';
+    const handled = k || e.code === 'KeyZ' || e.code === 'KeyX' || e.code === 'KeyH' || e.code === 'Space' || e.code === 'Enter';
     if (handled) e.preventDefault();
     Sound.unlock();
     if (k) { input[k] = true; return; }
     if (e.repeat) return;
     if (e.code === 'KeyZ') { input.a = true; pressA(); }
-    else if (e.code === 'KeyX' || e.code === 'Space') pressB();
+    else if (e.code === 'KeyX') pressB();
+    else if (e.code === 'Space') pressSpace();
+    else if (e.code === 'KeyH') { if (Game.S.state === 'title') howto = !howto; }
     else if (e.code === 'Enter') startPress();
   });
   window.addEventListener('keyup', function (e) {
@@ -1114,6 +1516,7 @@ const Sound = (function () {
   cv.addEventListener('pointerdown', function (e) {
     Sound.unlock();
     cv.focus();
+    if (howto) { e.preventDefault(); howto = false; return; }
     if (Game.S.state !== 'play' || paused) { e.preventDefault(); act(); }
   });
 
@@ -1188,11 +1591,11 @@ const Sound = (function () {
       Game.update(dt, input);
       handle(Game.drain());
     }
-    Render.draw(ctx, paused ? 0 : dt, best, newBest, paused);
+    Sound.music(Game.S.state === 'play' && !paused);
+    Render.draw(ctx, paused ? 0 : dt, best, newBest, paused, howto);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 })();
 </script>
-</body>
-</html>
+
